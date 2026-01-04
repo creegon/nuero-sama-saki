@@ -1,0 +1,102 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Models and Checkpoints (通常这些文件很大，不适合上传到 GitHub)
+checkpoints/
+models/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.bin
+
+# Data Files
+data/knowledge_lance/
+data/knowledge_backups/
+data/animation_clips/
+data/motion_capture/
+data/vts_capture/
+data/last_chat.json
+*.lance
+
+# Debug and Logs
+debug_audio/
+logs/
+*.log
+debug_prompt.txt
+
+# Memory and Chat History
+memory.md
+
+# Audio Files
+*.wav
+*.mp3
+*.ogg
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Outputs
+outputs/
+
+# Temporary Files
+*.tmp
+*.temp
+nul
+
+# Configuration (如果包含敏感信息，取消下面的注释)
+# config.py
+# conf/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Documentation (如果不想上传文档)
+# *.docx
+# *.pdf
+
+# modules暂时全都不上传
+modules/

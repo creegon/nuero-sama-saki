@@ -1,0 +1,26 @@
+# Neuro-like AI Desktop Pet - Dependencies
+# 
+# IMPORTANT: Install PyTorch with CUDA first!
+# For RTX 4090, run this command BEFORE pip install -r requirements.txt:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# STT (Speech to Text)
+pyaudio>=0.2.14
+faster-whisper>=1.0.0
+
+# LLM
+openai>=1.0.0
+httpx>=0.24.0
+
+# TTS
+gradio_client>=1.4.0
+sounddevice>=0.4.6
+scipy>=1.10.0
+
+# Knowledge Base (ChromaDB)
+chromadb>=1.4.0
+sentence-transformers>=2.2.0
+
+# Utils
+numpy>=1.24.0
+loguru>=0.7.0

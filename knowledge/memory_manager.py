@@ -1,0 +1,383 @@
+# -*- coding: utf-8 -*-
+"""
+记忆管理器
+负责记忆的重要性评分、去重合并、衰减遗忘等
+"""
+
+import time
+from typing import Dict, List, Optional
+from loguru import logger
+
+
+class MemoryManager:
+    """
+    记忆管理器
+    
+    提供记忆的高级管理功能：
+    - 重要性评分动态调整
+    - 相似记忆去重合并
+    - 长期未访问记忆衰减
+    """
+    
+    def __init__(self, knowledge_base):
+        self.kb = knowledge_base
+    
+    # 临界值
+    PROMOTE_THRESHOLD = 2.5  # 达到此值触发升级审核
+    DECAY_THRESHOLD = 0.5    # 低于此值触发删除审核
+    DELETE_COOLDOWN_HOURS = 24  # 删除审核冷却期（小时）
+    
+    def update_importance(self, doc_id: str, delta: float = 0.5, trigger_review: bool = True) -> bool:
+        """
+        更新记忆重要性评分
+        
+        Args:
+            doc_id: 文档 ID
+            delta: 评分变化量 (正数增加，负数减少)
+            trigger_review: 是否在达到临界值时触发审核
+        
+        Returns:
+            是否成功
+        """
+        try:
+            all_rows = self.kb._table.to_pandas()
+            for idx, row in all_rows.iterrows():
+                if row["id"] == doc_id:
+                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                    old_importance = metadata.get("importance", 1.0)
+                    new_importance = max(0, old_importance + delta)
+                    metadata["importance"] = new_importance
+                    metadata["access_count"] = metadata.get("access_count", 0) + 1
+                    metadata["last_access"] = time.time()
+                    
+                    # 更新记录
+                    self.kb._table.delete(f"id = '{doc_id}'")
+                    self.kb._table.add([{
+                        "id": doc_id,
+                        "text": row["text"],
+                        "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+                        "vector": row["vector"]
+                    }])
+                    
+                    logger.debug(f"📊 更新重要性: [{doc_id}] {old_importance:.1f} -> {new_importance:.1f}")
+                    
+                    # 🔥 检查是否需要触发升级审核
+                    if trigger_review and new_importance >= self.PROMOTE_THRESHOLD:
+                        category = metadata.get("category", "fact")
+                        promotion_rejected = metadata.get("promotion_rejected", False)
+                        
+                        # 🔥 如果之前已经被拒绝升级，不再触发
+                        if promotion_rejected:
+                            logger.debug(f"⛔ 跳过升级审核（已被淘汰）: [{doc_id}]")
+                        elif category not in ["core", "system"]:
+                            # 异步触发升级审核
+                            self._schedule_promotion_review({
+                                "id": doc_id,
+                                "text": row["text"],
+                                "metadata": metadata
+                            })
+                    
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"更新重要性失败: {e}")
+            return False
+    
+    def _schedule_promotion_review(self, memory: dict):
+        """调度升级审核（异步）"""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._run_promotion_review(memory))
+        except RuntimeError:
+            # 没有运行中的事件循环，跳过
+            logger.debug(f"⏳ 升级审核已跳过（无事件循环）: [{memory['id']}]")
+    
+    async def _run_promotion_review(self, memory: dict):
+        """执行升级审核"""
+        try:
+            from core.memory_reviewer import get_memory_reviewer
+            reviewer = get_memory_reviewer()
+            if reviewer:
+                decision = await reviewer.review_for_promotion(memory)
+                if decision == "PROMOTE":
+                    self._promote_to_core(memory["id"])
+                elif decision == "DELETE":
+                    self.kb.delete(memory["id"])
+                elif decision == "KEEP":
+                    # 🔥 升级被拒绝，设置标记，永不再触发升级审核
+                    self._set_promotion_rejected(memory["id"])
+        except Exception as e:
+            logger.error(f"升级审核执行失败: {e}")
+    
+    def _promote_to_core(self, doc_id: str):
+        """将记忆升级为 core"""
+        try:
+            all_rows = self.kb._table.to_pandas()
+            for _, row in all_rows.iterrows():
+                if row["id"] == doc_id:
+                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                    metadata["category"] = "core"
+                    
+                    self.kb._table.delete(f"id = '{doc_id}'")
+                    self.kb._table.add([{
+                        "id": doc_id,
+                        "text": row["text"],
+                        "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+                        "vector": row["vector"]
+                    }])
+                    
+                    logger.info(f"⭐ 记忆升级为核心: [{doc_id}]")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"升级为核心失败: {e}")
+            return False
+    
+    def find_similar(self, text: str, threshold: float = 0.8) -> list:
+        """
+        查找相似记忆
+        
+        Args:
+            text: 要比较的文本
+            threshold: 相似度阈值 (1.0 = 完全相同, 0.8 = 很相似)
+        
+        Returns:
+            相似记忆列表 [{"id": ..., "text": ..., "similarity": ...}]
+        """
+        try:
+            results = self.kb.search(text, n_results=5)
+            
+            similar = []
+            for r in results:
+                distance = r.get("distance", 2.0)
+                similarity = max(0, 1 - distance / 2)
+                if similarity >= threshold:
+                    similar.append({
+                        "id": r["id"],
+                        "text": r.get("text", ""),
+                        "similarity": similarity,
+                        "metadata": r.get("metadata", {})
+                    })
+            
+            return similar
+        except Exception as e:
+            logger.debug(f"查找相似记忆失败: {e}")
+            return []
+    
+    def add_with_dedup(self, text: str, metadata: Dict = None, similarity_threshold: float = 0.85) -> str:
+        """
+        添加记忆（自动去重和合并）
+        
+        如果已有非常相似的记忆，则增加其重要性而非重复添加
+        
+        Returns:
+            文档 ID（新建或已存在的）
+        """
+        similar = self.find_similar(text, threshold=similarity_threshold)
+        
+        if similar:
+            best_match = similar[0]
+            self.update_importance(best_match["id"], delta=0.5)
+            logger.info(f"🔗 记忆合并: 增强现有记忆 [{best_match['id']}] (相似度: {best_match['similarity']:.2f})")
+            return best_match["id"]
+        else:
+            return self.kb.add(text, metadata)
+    
+    def decay_old_memories(self, days_threshold: int = 7, decay_factor: float = 0.9) -> int:
+        """
+        衰减长期未访问的记忆
+        
+        三层架构衰减规则：
+        - system: 永不衰减（系统设定）
+        - core: 永不衰减（核心事实，importance >= 3.0）
+        - episode: 7天后快速衰减(0.8)，14天后删除
+        - fact: 7天后正常衰减(0.95)，importance < 0.3 时删除
+        
+        Returns:
+            衰减的记忆数量
+        """
+        try:
+            all_rows = self.kb._table.to_pandas()
+            now = time.time()
+            threshold_seconds = days_threshold * 24 * 3600  # 7天
+            episode_delete_threshold = 14 * 24 * 3600  # 14天
+            
+            decayed_count = 0
+            deleted_count = 0
+            
+            for _, row in all_rows.iterrows():
+                metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                last_access = metadata.get("last_access", metadata.get("timestamp", 0))
+                category = metadata.get("category", "fact")
+                importance = metadata.get("importance", 1.0)
+                
+                # system 永不衰减
+                if category == "system":
+                    continue
+                
+                # core 永不衰减（只看 category，由后台小祥标记）
+                if category == "core":
+                    continue
+                
+                elapsed = now - last_access
+                
+                # episode 类型：快速衰减，14天后删除
+                if category == "episode":
+                    if elapsed > episode_delete_threshold:
+                        self.kb.delete(row["id"])
+                        logger.debug(f"🗑 删除过期情境: [{row['id']}]")
+                        deleted_count += 1
+                    elif elapsed > threshold_seconds:
+                        new_importance = importance * 0.8  # 快速衰减
+                        if new_importance < 0.3:
+                            self.kb.delete(row["id"])
+                            logger.debug(f"🗑 遗忘情境: [{row['id']}]")
+                            deleted_count += 1
+                        else:
+                            metadata["importance"] = new_importance
+                            self._update_memory_metadata(row, metadata)
+                            decayed_count += 1
+                    continue
+                
+                # fact 类型：正常衰减
+                if elapsed > threshold_seconds:
+                    new_importance = importance * decay_factor
+                    metadata["importance"] = new_importance
+                    self._update_memory_metadata(row, metadata)
+                    decayed_count += 1
+                    
+                    # 🔥 低于阈值时触发删除审核（让 LLM 判断）
+                    if new_importance < self.DECAY_THRESHOLD:
+                        # 🔥 检查冷却期
+                        cooldown_until = metadata.get("delete_cooldown_until", 0)
+                        if cooldown_until > time.time():
+                            logger.debug(f"⛔ 跳过删除审核（冷却中）: [{row['id']}]")
+                        else:
+                            self._schedule_decay_review({
+                                "id": row["id"],
+                                "text": row["text"],
+                                "metadata": metadata
+                            })
+            
+            if decayed_count > 0 or deleted_count > 0:
+                logger.info(f"🧹 记忆衰减: 衰减 {decayed_count} 条，删除 {deleted_count} 条")
+            return decayed_count + deleted_count
+            
+        except Exception as e:
+            logger.error(f"记忆衰减失败: {e}")
+            return 0
+    
+    def _schedule_decay_review(self, memory: dict):
+        """调度衰减审核（异步）"""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._run_decay_review(memory))
+        except RuntimeError:
+            logger.debug(f"⏳ 衰减审核已跳过（无事件循环）: [{memory['id']}]")
+    
+    async def _run_decay_review(self, memory: dict):
+        """执行衰减审核"""
+        try:
+            from core.memory_reviewer import get_memory_reviewer
+            reviewer = get_memory_reviewer()
+            if reviewer:
+                decision = await reviewer.review_for_decay(memory)
+                if decision == "DELETE":
+                    self.kb.delete(memory["id"])
+                    logger.info(f"🗑 审核后删除: [{memory['id']}]")
+                elif decision == "KEEP":
+                    # 🔥 保留：重置 importance 并设置 24h 冷却期
+                    self._reset_importance_with_cooldown(memory["id"], 0.5)
+        except Exception as e:
+            logger.error(f"衰减审核执行失败: {e}")
+    
+    def _reset_importance(self, doc_id: str, new_importance: float):
+        """重置记忆的 importance"""
+        try:
+            all_rows = self.kb._table.to_pandas()
+            for _, row in all_rows.iterrows():
+                if row["id"] == doc_id:
+                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                    metadata["importance"] = new_importance
+                    metadata["last_access"] = time.time()
+                    
+                    self.kb._table.delete(f"id = '{doc_id}'")
+                    self.kb._table.add([{
+                        "id": doc_id,
+                        "text": row["text"],
+                        "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+                        "vector": row["vector"]
+                    }])
+                    logger.debug(f"📊 重置重要性: [{doc_id}] -> {new_importance}")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"重置重要性失败: {e}")
+            return False
+    
+    def _set_promotion_rejected(self, doc_id: str):
+        """🔥 设置升级被拒绝标记（永不再触发升级审核）"""
+        try:
+            all_rows = self.kb._table.to_pandas()
+            for _, row in all_rows.iterrows():
+                if row["id"] == doc_id:
+                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                    metadata["promotion_rejected"] = True
+                    
+                    self.kb._table.delete(f"id = '{doc_id}'")
+                    self.kb._table.add([{
+                        "id": doc_id,
+                        "text": row["text"],
+                        "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+                        "vector": row["vector"]
+                    }])
+                    logger.info(f"⛔ 设置升级淘汰标记: [{doc_id}]")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"设置淘汰标记失败: {e}")
+            return False
+    
+    def _reset_importance_with_cooldown(self, doc_id: str, new_importance: float):
+        """🔥 重置 importance 并设置删除审核冷却期"""
+        try:
+            all_rows = self.kb._table.to_pandas()
+            for _, row in all_rows.iterrows():
+                if row["id"] == doc_id:
+                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                    metadata["importance"] = new_importance
+                    metadata["last_access"] = time.time()
+                    # 🔥 设置冷却期
+                    cooldown_seconds = self.DELETE_COOLDOWN_HOURS * 3600
+                    metadata["delete_cooldown_until"] = time.time() + cooldown_seconds
+                    
+                    self.kb._table.delete(f"id = '{doc_id}'")
+                    self.kb._table.add([{
+                        "id": doc_id,
+                        "text": row["text"],
+                        "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+                        "vector": row["vector"]
+                    }])
+                    logger.info(f"⏳ 设置删除冷却期: [{doc_id}] ({self.DELETE_COOLDOWN_HOURS}h)")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"设置冷却期失败: {e}")
+            return False
+    
+    def _update_memory_metadata(self, row, metadata):
+        """更新记忆的 metadata"""
+        self.kb._table.delete(f"id = '{row['id']}'")
+        self.kb._table.add([{
+            "id": row["id"],
+            "text": row["text"],
+            "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+            "vector": row["vector"]
+        }])
+
+
+def create_memory_manager(knowledge_base) -> MemoryManager:
+    """创建记忆管理器"""
+    return MemoryManager(knowledge_base)
