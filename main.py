@@ -96,6 +96,54 @@ def main():
     ╚═══════════════════════════════════════════════╝
     """)
     
+    # 🔥 后台预加载知识库 + Embedding 模型 (~17s)
+    # 与其他组件并行加载，大幅减少总启动时间
+    import threading
+    knowledge_ready = threading.Event()
+    
+    def _preload_knowledge():
+        try:
+            # 这会触发 SentenceTransformer 加载（~17s）
+            from knowledge import get_knowledge_base
+            kb = get_knowledge_base()
+            logger.info(f"✅ 知识库预加载完成: {kb.count()} 条记录")
+            
+            # 🔥 启动时执行记忆衰减（如果距上次衰减超过 24h）
+            try:
+                from knowledge.memory_manager import MemoryManager
+                import os
+                import json
+                
+                decay_state_file = "data/decay_state.json"
+                last_decay = 0
+                
+                if os.path.exists(decay_state_file):
+                    with open(decay_state_file, 'r') as f:
+                        state = json.load(f)
+                        last_decay = state.get("last_decay", 0)
+                
+                import time
+                if time.time() - last_decay > 24 * 3600:  # 超过 24 小时
+                    manager = MemoryManager(kb)
+                    count = manager.decay_old_memories()
+                    if count > 0:
+                        logger.info(f"🧹 启动时记忆衰减: 处理 {count} 条")
+                    
+                    # 更新衰减状态
+                    os.makedirs("data", exist_ok=True)
+                    with open(decay_state_file, 'w') as f:
+                        json.dump({"last_decay": time.time()}, f)
+            except Exception as de:
+                logger.debug(f"启动时衰减失败: {de}")
+                
+        except Exception as e:
+            logger.error(f"❌ 知识库预加载失败: {e}")
+        finally:
+            knowledge_ready.set()
+    
+    preload_thread = threading.Thread(target=_preload_knowledge, daemon=True, name="KnowledgePreload")
+    preload_thread.start()
+    
     if args.debug:
         print("    🔧 Debug 模式已启用\n")
     

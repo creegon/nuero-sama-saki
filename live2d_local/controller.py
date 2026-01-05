@@ -33,7 +33,7 @@ import os
 import math
 import random
 import time
-from typing import Optional
+from typing import Optional, Callable
 
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import QApplication, QOpenGLWidget
@@ -74,6 +74,11 @@ class Live2DController(QOpenGLWidget):
     _sig_scale_change = pyqtSignal(float)
     _sig_toggle_side = pyqtSignal()
     _sig_random_corner = pyqtSignal()
+    
+    # 🎯 交互 Signals
+    _sig_text_input = pyqtSignal(str)        # 文字输入信号
+    _sig_interaction = pyqtSignal(str)       # 触摸/拖动交互信号
+    _sig_exit_program = pyqtSignal()         # 退出程序信号
     
     def __init__(
         self,
@@ -180,6 +185,23 @@ class Live2DController(QOpenGLWidget):
         
         # 窗口拖动
         self.drag_position = None
+        self._drag_started = False           # 🎯 是否已开始拖动 (区分点击和拖动)
+        self._drag_start_pos = None          # 🎯 拖动开始位置
+        self._click_pos = None               # 🎯 点击位置
+        
+        # 🎯 交互系统
+        self._interaction_callback: Optional[Callable[[str], None]] = None
+        self._interaction_menu = None        # 交互菜单实例
+        self._last_touch_time = 0            # 上次触摸时间 (冷却用)
+        self._last_drag_time = 0             # 上次拖动时间 (冷却用)
+        self._drag_start_time = 0            # 拖动开始时间 (计算拖动时长)
+        self._drag_triggered = False         # 是否已触发拖动开始信号
+        self._touch_cooldown = getattr(config, 'LIVE2D_TOUCH_COOLDOWN', 3.0) if config else 3.0
+        self._drag_cooldown = 5.0            # 拖动冷却时间 (秒)
+        self._drag_long_threshold = 3.0      # 拖动多久算"拖得久" (秒)
+        self._interaction_enabled = getattr(config, 'LIVE2D_INTERACTION_ENABLED', True) if config else True
+        self._touch_response_enabled = getattr(config, 'LIVE2D_TOUCH_RESPONSE_ENABLED', True) if config else True
+        self._drag_response_enabled = getattr(config, 'LIVE2D_DRAG_RESPONSE_ENABLED', True) if config else True
         
         # 窗口设置
         self.setWindowTitle("Sakiko")
@@ -587,8 +609,8 @@ class Live2DController(QOpenGLWidget):
             return 0.0
         return self.width() / self.display_width
     
-    def move_to_corner(self, corner: str):
-        """移动到屏幕角落"""
+    def move_to_corner(self, corner: str, animate: bool = True):
+        """移动到屏幕角落（支持动画）"""
         screen = QApplication.primaryScreen()
         if not screen:
             return
@@ -614,7 +636,30 @@ class Live2DController(QOpenGLWidget):
             x = geometry.width() - self.width() - margin
             y = geometry.height() - self.height() - margin
         
-        self.move(x, y)
+        if animate:
+            self._animate_move_to(x, y)
+        else:
+            self.move(x, y)
+    
+    def _animate_move_to(self, target_x: int, target_y: int):
+        """平滑移动到目标位置"""
+        from PyQt5.QtCore import QPropertyAnimation, QPoint
+        
+        # 如果已有动画在运行，先停止
+        if hasattr(self, '_move_anim') and self._move_anim:
+            self._move_anim.stop()
+        
+        # 创建位置动画
+        self._move_anim = QPropertyAnimation(self, b"pos")
+        self._move_anim.setDuration(500)  # 500ms
+        self._move_anim.setStartValue(self.pos())
+        self._move_anim.setEndValue(QPoint(target_x, target_y))
+        
+        # 使用缓动曲线让动画更自然
+        from PyQt5.QtCore import QEasingCurve
+        self._move_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        self._move_anim.start()
     
     # ==================== 🔥 线程安全请求方法 (跨线程调用) ====================
     
@@ -642,8 +687,8 @@ class Live2DController(QOpenGLWidget):
     
     @pyqtSlot(str)
     def _slot_move_to_corner(self, corner: str):
-        """Slot: 移动到角落"""
-        self.move_to_corner(corner)
+        """Slot: 移动到角落（带动画）"""
+        self.move_to_corner(corner, animate=True)
     
     @pyqtSlot(float)
     def _slot_set_scale(self, scale: float):
@@ -681,26 +726,160 @@ class Live2DController(QOpenGLWidget):
     # ==================== 鼠标事件 ====================
     
     def mousePressEvent(self, event):
-        """鼠标按下 - 开始拖动"""
+        """鼠标按下 - 开始拖动/检测触摸"""
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            self._drag_started = False
+            self._drag_start_pos = event.pos()
+            self._click_pos = event.pos()
             event.accept()
     
     def mouseMoveEvent(self, event):
         """鼠标移动 - 拖动窗口"""
         if event.buttons() == Qt.MouseButton.LeftButton and self.drag_position:
+            # 检测是否开始拖动 (移动超过 5 像素)
+            if self._drag_start_pos and not self._drag_started:
+                delta = event.pos() - self._drag_start_pos
+                if delta.manhattanLength() > 5:
+                    self._drag_started = True
+                    # 🎯 开始拖动，检查冷却后触发
+                    import time as _time
+                    current_time = _time.time()
+                    if self._drag_response_enabled and self._interaction_enabled:
+                        if current_time - self._last_drag_time >= self._drag_cooldown:
+                            self._last_drag_time = current_time
+                            self._drag_start_time = current_time
+                            self._drag_triggered = True
+                            self._trigger_interaction("drag_start")
+                        else:
+                            self._drag_triggered = False  # 冷却中，不触发
+            
             self.move(event.globalPos() - self.drag_position)
             event.accept()
     
     def mouseReleaseEvent(self, event):
-        """鼠标释放 - 结束拖动"""
+        """鼠标释放 - 结束拖动/检测点击"""
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._drag_started:
+                # 🎯 拖动结束
+                import time as _time
+                current_time = _time.time()
+                
+                # 只有在触发了 drag_start 且拖动时间超过阈值时，才触发 drag_end
+                if self._drag_triggered and self._drag_response_enabled and self._interaction_enabled:
+                    drag_duration = current_time - self._drag_start_time
+                    if drag_duration >= self._drag_long_threshold:
+                        self._trigger_interaction("drag_end")
+                
+                self._drag_triggered = False
+            elif self._click_pos:
+                # 这是一个点击（不是拖动）
+                # 🎯 检测触摸区域并发送信号
+                if self._touch_response_enabled and self._interaction_enabled:
+                    self._handle_touch(self._click_pos)
+            
             self.drag_position = None
+            self._drag_started = False
+            self._drag_start_pos = None
+            self._click_pos = None
     
     def mouseDoubleClickEvent(self, event):
         """双击 - 切换随机表情"""
         if event.button() == Qt.MouseButton.LeftButton:
+            self._click_pos = None  # 取消单击处理
             self.set_random_expression()
+    
+    def contextMenuEvent(self, event):
+        """右键菜单 - 切换显示/隐藏"""
+        if not self._interaction_enabled:
+            return
+        
+        # 🔥 切换模式：如果菜单已显示则隐藏，否则显示
+        if self._interaction_menu and self._interaction_menu.isVisible():
+            self._interaction_menu.hide_menu()
+        else:
+            self._show_interaction_menu(event.globalPos())
+        
+        event.accept()
+    
+    # ==================== 🎯 交互系统 ====================
+    
+    def set_interaction_callback(self, callback: Callable[[str], None]):
+        """设置交互回调（触摸/拖动时调用）"""
+        self._interaction_callback = callback
+    
+    def _get_touch_zone(self, pos) -> str:
+        """根据点击位置获取触摸区域"""
+        from .interaction_prompts import get_touch_zone
+        y_ratio = pos.y() / self.height()
+        return get_touch_zone(y_ratio)
+    
+    def _handle_touch(self, pos):
+        """处理触摸事件"""
+        import time as _time
+        
+        # 检查冷却
+        current_time = _time.time()
+        if current_time - self._last_touch_time < self._touch_cooldown:
+            return
+        
+        self._last_touch_time = current_time
+        
+        # 获取触摸区域并发送交互
+        zone = self._get_touch_zone(pos)
+        self._trigger_interaction(f"touch_{zone}")
+    
+    def _trigger_interaction(self, action: str):
+        """触发交互事件"""
+        from .interaction_prompts import get_touch_prompt, DRAG_START_PROMPT, DRAG_END_PROMPT
+        
+        # 根据动作类型获取 prompt
+        if action == "drag_start":
+            prompt = DRAG_START_PROMPT
+        elif action == "drag_end":
+            prompt = DRAG_END_PROMPT
+        elif action.startswith("touch_"):
+            zone = action.replace("touch_", "")
+            prompt = get_touch_prompt(zone)
+        else:
+            prompt = get_touch_prompt("body")  # 默认当作触摸身体
+        
+        # 发送信号
+        self._sig_interaction.emit(prompt)
+        
+        # 调用回调
+        if self._interaction_callback:
+            self._interaction_callback(prompt)
+        
+        print(f"🎯 交互: {prompt}")
+    
+    def _show_interaction_menu(self, global_pos):
+        """显示交互菜单"""
+        from .interaction_menu import InteractionMenu
+        
+        # 懒加载菜单
+        if self._interaction_menu is None:
+            self._interaction_menu = InteractionMenu()
+            self._interaction_menu.text_submitted.connect(self._on_menu_text_submitted)
+            self._interaction_menu.exit_requested.connect(self._on_menu_exit_requested)
+        
+        # 在角色旁边显示菜单
+        menu_x = global_pos.x() + 20
+        menu_y = global_pos.y()
+        
+        from PyQt5.QtCore import QPoint
+        self._interaction_menu.show_at(QPoint(menu_x, menu_y))
+    
+    def _on_menu_text_submitted(self, text: str):
+        """交互菜单文字提交"""
+        self._sig_text_input.emit(text)
+        print(f"💬 文字输入: {text}")
+    
+    def _on_menu_exit_requested(self):
+        """交互菜单退出请求"""
+        self._sig_exit_program.emit()
+        print("🚪 收到退出请求")
+
 
 
 def create_controller(model_path: str) -> Live2DController:

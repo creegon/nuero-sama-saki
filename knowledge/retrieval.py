@@ -22,35 +22,6 @@ class MemoryRetriever:
     def __init__(self, knowledge_base):
         self.kb = knowledge_base
     
-    def get_system_context(self) -> str:
-        """获取系统上下文（category=system 的知识条目）"""
-        try:
-            all_rows = self.kb._table.to_pandas()
-            if all_rows.empty:
-                return ""
-            
-            system_entries = []
-            for _, row in all_rows.iterrows():
-                try:
-                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
-                    if metadata.get("category") == "system":
-                        system_entries.append(row.get("text", ""))
-                except:
-                    continue
-            
-            if not system_entries:
-                return ""
-            
-            lines = ["[你知道的背景信息]"]
-            for entry in system_entries:
-                lines.append(f"- {entry}")
-            
-            return "\n".join(lines)
-            
-        except Exception as e:
-            logger.debug(f"获取系统上下文失败: {e}")
-            return ""
-    
     def get_recent_memories(self, n: int = 5, exclude_system: bool = True) -> str:
         """获取最近 N 条记忆（按重要性+时间排序）"""
         try:
@@ -69,6 +40,16 @@ class MemoryRetriever:
                     
                     importance = metadata.get("importance", 1.0)
                     timestamp = metadata.get("timestamp", 0)
+                    
+                    # 🔥 确保类型一致（防止 str vs float 比较错误）
+                    try:
+                        importance = float(importance)
+                    except (TypeError, ValueError):
+                        importance = 1.0
+                    try:
+                        timestamp = float(timestamp)
+                    except (TypeError, ValueError):
+                        timestamp = 0.0
                     
                     memories.append({
                         "text": text,

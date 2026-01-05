@@ -81,20 +81,27 @@ class PromptBuilder:
         if time_context:
             parts.append(time_context)
         
-        # 2. 系统上下文/背景设定
-        system_context = injector.get_system_context()
-        if system_context:
-            parts.append(system_context)
-        
-        # 3. 重要记忆
+        # 2. 重要记忆（核心层）
         important = injector.get_important_memories()
         if important:
             parts.append(important)
         
-        # 4. 最近记忆
+        # 3. 最近记忆（一般事实）
         recent = injector.get_recent_memories()
         if recent:
             parts.append(recent)
+        
+        # 4. 🔥 后台小祥整理的工具调用结果
+        try:
+            from core.context_manager import get_context_manager
+            context_manager = get_context_manager()
+            prepared_context = context_manager.get_prepared_context()
+            if prepared_context:
+                parts.append(f"[你检索得知的信息]\n{prepared_context}")
+                # 获取后清空，避免重复
+                context_manager.clear_context()
+        except Exception as e:
+            logger.debug(f"获取工具上下文失败: {e}")
         
         return "\n\n".join(parts)
     
@@ -110,6 +117,7 @@ class PromptBuilder:
         格式参考 MaiBot：
         ```
         当前时间：2026-01-02 01:15
+        主人正在使用：Visual Studio Code - project.py
         
         对话记录：
         01:10:15, 主人: 你好啊
@@ -132,9 +140,15 @@ class PromptBuilder:
         # 1. 当前时间
         now = datetime.now()
         lines.append(f"当前时间：{now.strftime('%Y-%m-%d %H:%M')}")
+        
+        # 2. 🔥 自动附加前台窗口标题
+        window_title = self._get_foreground_window_title()
+        if window_title:
+            lines.append(f"主人正在使用：{window_title[:60]}")
+        
         lines.append("")
         
-        # 2. 对话记录（简洁格式）
+        # 3. 对话记录（简洁格式）
         if conversation_history:
             lines.append("对话记录：")
             
@@ -172,10 +186,36 @@ class PromptBuilder:
             
             lines.append("")
         
-        # 3. 当前输入
+        # 4. 当前输入
         lines.append(f"现在主人说的: {current_input}")
         
         return "\n".join(lines)
+    
+    def _get_foreground_window_title(self) -> str:
+        """获取前台窗口标题（Windows 专用）"""
+        try:
+            import ctypes
+            
+            user32 = ctypes.windll.user32
+            
+            # 获取前台窗口句柄
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd:
+                return ""
+            
+            # 获取窗口标题长度
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length == 0:
+                return ""
+            
+            # 获取窗口标题
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            
+            return buffer.value
+            
+        except Exception:
+            return ""
     
     def build_messages(
         self,

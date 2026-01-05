@@ -24,8 +24,20 @@ class MemoryManager:
     
     # 临界值
     PROMOTE_THRESHOLD = 2.5  # 达到此值触发升级审核
-    DECAY_THRESHOLD = 0.5    # 低于此值触发删除审核
+    DECAY_THRESHOLD = 0.2    # 低于此值触发删除审核（更激进）
     DELETE_COOLDOWN_HOURS = 24  # 删除审核冷却期（小时）
+    
+    # 🔥 BOOST 防刷参数
+    BOOST_VALUE = 0.5           # 单次 BOOST 增量
+    BOOST_COOLDOWN_HOURS = 2    # 2小时内只算1次
+    BOOST_DAILY_CAP = 1.0       # 每天每条记忆最多涨 1.0
+    
+    # 🔥 衰减参数（更激进）
+    DECAY_DAYS_FACT = 5         # fact 类型 5 天后开始衰减
+    DECAY_FACTOR_FACT = 0.85    # fact 每次衰减 15%
+    DECAY_DAYS_EPISODE = 3      # episode 类型 3 天后开始衰减
+    DECAY_FACTOR_EPISODE = 0.6  # episode 每次衰减 40%
+    DELETE_DAYS_EPISODE = 7     # episode 7 天后强制删除
     
     def update_importance(self, doc_id: str, delta: float = 0.5, trigger_review: bool = True) -> bool:
         """
@@ -83,6 +95,83 @@ class MemoryManager:
             logger.error(f"更新重要性失败: {e}")
             return False
     
+    def boost_with_cooldown(self, doc_id: str) -> bool:
+        """
+        🔥 带冷却和每日上限的 BOOST
+        
+        - 2小时内多次使用只算1次
+        - 每天每条记忆最多涨 1.0
+        
+        Returns:
+            是否成功执行 BOOST
+        """
+        try:
+            from datetime import datetime
+            
+            all_rows = self.kb._table.to_pandas()
+            for idx, row in all_rows.iterrows():
+                if row["id"] == doc_id:
+                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                    now = time.time()
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    
+                    # 检查冷却期
+                    last_boost_time = metadata.get("last_boost_time", 0)
+                    if now - last_boost_time < self.BOOST_COOLDOWN_HOURS * 3600:
+                        logger.debug(f"⏳ BOOST 冷却中: [{doc_id}]")
+                        return False
+                    
+                    # 检查每日上限
+                    boost_date = metadata.get("boost_date", "")
+                    if boost_date == today:
+                        daily_boost = metadata.get("daily_boost_total", 0)
+                        if daily_boost >= self.BOOST_DAILY_CAP:
+                            logger.debug(f"📊 BOOST 达到每日上限: [{doc_id}]")
+                            return False
+                    else:
+                        # 新的一天，重置计数
+                        metadata["boost_date"] = today
+                        metadata["daily_boost_total"] = 0
+                    
+                    # 执行 BOOST
+                    old_importance = metadata.get("importance", 1.0)
+                    new_importance = old_importance + self.BOOST_VALUE
+                    
+                    metadata["importance"] = new_importance
+                    metadata["last_boost_time"] = now
+                    metadata["daily_boost_total"] = metadata.get("daily_boost_total", 0) + self.BOOST_VALUE
+                    metadata["access_count"] = metadata.get("access_count", 0) + 1
+                    metadata["last_access"] = now
+                    
+                    # 更新记录
+                    self.kb._table.delete(f"id = '{doc_id}'")
+                    self.kb._table.add([{
+                        "id": doc_id,
+                        "text": row["text"],
+                        "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+                        "vector": row["vector"]
+                    }])
+                    
+                    logger.debug(f"📊 BOOST: [{doc_id}] {old_importance:.1f} -> {new_importance:.1f}")
+                    
+                    # 检查是否触发升级审核
+                    if new_importance >= self.PROMOTE_THRESHOLD:
+                        category = metadata.get("category", "fact")
+                        promotion_rejected = metadata.get("promotion_rejected", False)
+                        
+                        if not promotion_rejected and category not in ["core", "system"]:
+                            self._schedule_promotion_review({
+                                "id": doc_id,
+                                "text": row["text"],
+                                "metadata": metadata
+                            })
+                    
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"BOOST 失败: {e}")
+            return False
+    
     def _schedule_promotion_review(self, memory: dict):
         """调度升级审核（异步）"""
         import asyncio
@@ -132,6 +221,46 @@ class MemoryManager:
             return False
         except Exception as e:
             logger.error(f"升级为核心失败: {e}")
+            return False
+    
+    def update_text(self, doc_id: str, new_text: str) -> bool:
+        """
+        更新记忆的文本内容（保留 metadata 和重新计算 vector）
+        
+        🔥 特别用于 core 记忆的更新（core 不允许删除，但允许修改）
+        
+        Args:
+            doc_id: 文档 ID
+            new_text: 新的文本内容
+        
+        Returns:
+            是否成功
+        """
+        try:
+            all_rows = self.kb._table.to_pandas()
+            for _, row in all_rows.iterrows():
+                if row["id"] == doc_id:
+                    metadata = self.kb._json.loads(row.get("metadata", "{}"))
+                    
+                    # 重新计算向量
+                    new_vector = self.kb._embed(new_text)
+                    
+                    # 更新记录
+                    self.kb._table.delete(f"id = '{doc_id}'")
+                    self.kb._table.add([{
+                        "id": doc_id,
+                        "text": new_text,
+                        "metadata": self.kb._json.dumps(metadata, ensure_ascii=False),
+                        "vector": new_vector
+                    }])
+                    
+                    logger.info(f"📝 更新记忆内容: [{doc_id}] → {new_text[:50]}...")
+                    return True
+            
+            logger.warning(f"⚠️ 记忆不存在: [{doc_id}]")
+            return False
+        except Exception as e:
+            logger.error(f"更新记忆内容失败: {e}")
             return False
     
     def find_similar(self, text: str, threshold: float = 0.8) -> list:
@@ -200,11 +329,15 @@ class MemoryManager:
         try:
             all_rows = self.kb._table.to_pandas()
             now = time.time()
-            threshold_seconds = days_threshold * 24 * 3600  # 7天
-            episode_delete_threshold = 14 * 24 * 3600  # 14天
+            
+            # 🔥 使用类属性参数
+            fact_threshold = self.DECAY_DAYS_FACT * 24 * 3600
+            episode_threshold = self.DECAY_DAYS_EPISODE * 24 * 3600
+            episode_delete_threshold = self.DELETE_DAYS_EPISODE * 24 * 3600
             
             decayed_count = 0
             deleted_count = 0
+            deleted_memory_ids = []  # 用于级联删除三元组
             
             for _, row in all_rows.iterrows():
                 metadata = self.kb._json.loads(row.get("metadata", "{}"))
@@ -212,26 +345,24 @@ class MemoryManager:
                 category = metadata.get("category", "fact")
                 importance = metadata.get("importance", 1.0)
                 
-                # system 永不衰减
-                if category == "system":
-                    continue
-                
-                # core 永不衰减（只看 category，由后台小祥标记）
-                if category == "core":
+                # system/core 永不衰减
+                if category in ["core", "system"]:
                     continue
                 
                 elapsed = now - last_access
                 
-                # episode 类型：快速衰减，14天后删除
+                # episode 类型：快速衰减
                 if category == "episode":
                     if elapsed > episode_delete_threshold:
                         self.kb.delete(row["id"])
+                        deleted_memory_ids.append(row["id"])
                         logger.debug(f"🗑 删除过期情境: [{row['id']}]")
                         deleted_count += 1
-                    elif elapsed > threshold_seconds:
-                        new_importance = importance * 0.8  # 快速衰减
-                        if new_importance < 0.3:
+                    elif elapsed > episode_threshold:
+                        new_importance = importance * self.DECAY_FACTOR_EPISODE
+                        if new_importance < self.DECAY_THRESHOLD:
                             self.kb.delete(row["id"])
+                            deleted_memory_ids.append(row["id"])
                             logger.debug(f"🗑 遗忘情境: [{row['id']}]")
                             deleted_count += 1
                         else:
@@ -241,15 +372,14 @@ class MemoryManager:
                     continue
                 
                 # fact 类型：正常衰减
-                if elapsed > threshold_seconds:
-                    new_importance = importance * decay_factor
+                if elapsed > fact_threshold:
+                    new_importance = importance * self.DECAY_FACTOR_FACT
                     metadata["importance"] = new_importance
                     self._update_memory_metadata(row, metadata)
                     decayed_count += 1
                     
-                    # 🔥 低于阈值时触发删除审核（让 LLM 判断）
+                    # 🔥 低于阈值时触发删除审核
                     if new_importance < self.DECAY_THRESHOLD:
-                        # 🔥 检查冷却期
                         cooldown_until = metadata.get("delete_cooldown_until", 0)
                         if cooldown_until > time.time():
                             logger.debug(f"⛔ 跳过删除审核（冷却中）: [{row['id']}]")
@@ -259,6 +389,16 @@ class MemoryManager:
                                 "text": row["text"],
                                 "metadata": metadata
                             })
+            
+            # 🔥 级联删除三元组
+            if deleted_memory_ids:
+                try:
+                    from .triple_store import get_triple_store
+                    triple_store = get_triple_store()
+                    for mid in deleted_memory_ids:
+                        triple_store.remove_source(mid)
+                except Exception as e:
+                    logger.debug(f"级联删除三元组失败: {e}")
             
             if decayed_count > 0 or deleted_count > 0:
                 logger.info(f"🧹 记忆衰减: 衰减 {decayed_count} 条，删除 {deleted_count} 条")

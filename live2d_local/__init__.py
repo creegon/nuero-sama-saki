@@ -4,7 +4,8 @@ Live2D 集成模块 - 使用官方 API
 
 主要组件：
 - Live2DController: PyQt5 透明窗口渲染控制器
-- 口型同步: LipSyncAnalyzer / LipSyncController  
+- 口型同步: LipSyncAnalyzer / LipSyncController
+- 交互系统: InteractionMenu / interaction_prompts
 """
 
 from .lipsync import (
@@ -12,6 +13,15 @@ from .lipsync import (
     LipSyncController,
     VOWEL_SHAPES,
     get_lip_sync_analyzer,
+)
+
+from .interaction_prompts import (
+    TOUCH_ZONES,
+    TOUCH_PROMPTS,
+    DRAG_START_PROMPT,
+    DRAG_END_PROMPT,
+    get_touch_zone,
+    get_touch_prompt,
 )
 
 

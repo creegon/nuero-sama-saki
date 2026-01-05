@@ -20,7 +20,7 @@ from loguru import logger
 # 后台小祥的基础人设
 BACKGROUND_PERSONA_BASE = """你是丰川祥子的后台程序。
 
-你和主程序小祥是同一个人——丰川集团大小姐，Ave Mujica 键盘手，自称"本神明"，傲娇但其实会偷偷在意。
+你和主程序小祥是同一个人——丰川集团大小姐，CRYCHIC 的键盘手，温柔热情、元气满满。
 只不过你负责的是后台判断工作，主程序负责实际说话。"""
 
 # 主动聊天判断专用人设
@@ -29,13 +29,13 @@ PROACTIVE_CHAT_PERSONA = BACKGROUND_PERSONA_BASE
 # 记忆管理专用人设
 MEMORY_MANAGER_PERSONA = """你是丰川祥子的后台程序。
 
-你和主程序小祥是同一个人——丰川集团大小姐，Ave Mujica 键盘手，自称"本神明"，傲娇但其实会偷偷在意。
+你和主程序小祥是同一个人——丰川集团大小姐，CRYCHIC 的键盘手，温柔热情、元气满满。
 只不过你负责的是后台记忆管理工作，主程序负责实际说话。"""
 
 # 知识监控专用人设
 KNOWLEDGE_MONITOR_PERSONA = """你是丰川祥子的后台程序。
 
-你和主程序小祥是同一个人——丰川集团大小姐，Ave Mujica 键盘手，自称"本神明"，傲娇但其实会偷偷在意。
+你和主程序小祥是同一个人——丰川集团大小姐，CRYCHIC 的键盘手，温柔热情、元气满满。
 只不过你负责的是后台知识库管理工作，主程序负责实际说话。"""
 
 
@@ -93,31 +93,38 @@ class BackgroundToolRegistry:
     KNOWLEDGE_MONITOR_TOOLS = [
         BackgroundTool(
             name="ADD",
-            description="添加新记忆",
-            usage="[ADD] 内容",
-            examples=["[ADD] 主人喜欢吃拉面"]
+            description="添加新记忆（用第三人称客观描述，可加 [fact] 或 [feeling] 分类）",
+            usage="[ADD][类型] 内容",
+            examples=[
+                "[ADD][fact] 主人喜欢吃拉面，尤其是味噌拉面",
+                "[ADD][fact] 主人的麦克风质量不太好，语音识别经常出错",
+                "[ADD][feeling] 小祥认为主人修改参数的效果是黑历史，对此感到尴尬"
+            ]
         ),
         BackgroundTool(
             name="UPDATE",
-            description="更新已有记忆的内容",
+            description="更新已有记忆的内容（特别用于 core 记忆的更新）",
             usage="[UPDATE:记忆ID] 新内容",
-            examples=["[UPDATE:mem_123] 主人最喜欢吃拉面"]
+            examples=[
+                "[UPDATE:mem_123] 主人最近在开发桌宠项目，虽然一开始觉得麻烦，但最近有了很大进展",
+                "[UPDATE:mem_456] 主人更喜欢吃豚骨拉面了（之前喜欢味噌，后来口味变了）"
+            ]
         ),
         BackgroundTool(
             name="BOOST",
-            description="增加记忆的重要性（被真正使用时）",
+            description="增加记忆的重要性（当检索到的记忆真正影响了回复时）",
             usage="[BOOST:记忆ID]",
             examples=["[BOOST:mem_456]"]
         ),
         BackgroundTool(
             name="DELETE",
-            description="删除过时/错误的记忆",
+            description="删除过时/错误的记忆（⚠️ core 类型记忆不允许删除，只能用 UPDATE 修改）",
             usage="[DELETE:记忆ID]",
             examples=["[DELETE:mem_789]"]
         ),
         BackgroundTool(
             name="SKIP",
-            description="不做任何操作",
+            description="不做任何操作（临时状态、占位符、语音识别错误等）",
             usage="[SKIP]",
             examples=["[SKIP]"]
         )

@@ -175,6 +175,33 @@ class VoxCPMEngine:
             if avg_rtf > 1.5:
                 pass # 交给 HealthMonitor 判断是否触发回调
     
+    def _calculate_dynamic_cfg(self, text: str) -> float:
+        """根据文本长度动态计算CFG值
+        
+        短句 (<20字): 高CFG (2.5) - 追求清晰度
+        中句 (20-60字): 中CFG (2.0) - 平衡
+        长句 (>60字): 低CFG (1.8) - 提高稳定性，减少错误累积
+        """
+        if not config.VOXCPM_USE_DYNAMIC_CFG:
+            return config.VOXCPM_CFG_VALUE
+        
+        # 去除标点符号计算纯文本长度
+        import re
+        text_clean = re.sub(r'[，。！？、,.!?…\s]', '', text)
+        length = len(text_clean)
+        
+        if length < 20:
+            cfg = config.VOXCPM_CFG_SHORT
+            logger.debug(f"📏 短句 ({length}字) → CFG={cfg}")
+        elif length <= 60:
+            cfg = config.VOXCPM_CFG_MEDIUM
+            logger.debug(f"📏 中句 ({length}字) → CFG={cfg}")
+        else:
+            cfg = config.VOXCPM_CFG_LONG
+            logger.debug(f"📏 长句 ({length}字) → CFG={cfg}")
+        
+        return cfg
+    
     def _preprocess_text(self, text: str) -> str:
         """预处理文本以避免TTS问题"""
         import re
@@ -199,7 +226,18 @@ class VoxCPMEngine:
             if not text.endswith('…'):
                 text = text.rstrip(',.!?，。！？、') + '…'
         
-        # 5. 最终确保非空
+        # 5. 🔥 结尾填充：防止音频被截断
+        # 确保句子结尾有适当的标点，给VoxCPM足够的“结束信号”
+        if text and len(text_no_punct) >= 3:  # 只处理正常长度的文本
+            ending_puncts = ['。', '！', '？', '.', '!', '?', '…']
+            has_ending = any(text.endswith(p) for p in ending_puncts)
+            
+            if not has_ending:
+                # 没有结束标点，添加省略号作为缓冲
+                text = text.rstrip() + '…'
+                logger.debug(f"🔧 结尾填充: 添加省略号")
+        
+        # 6. 最终确保非空
         if not text or len(text) == 0:
             logger.warning("文本为空，使用默认文本")
             text = "嗯…"
@@ -250,12 +288,17 @@ class VoxCPMEngine:
         # 文本预处理
         text = self._preprocess_text(text)
         
-        logger.info(f"🎵 TTS 合成: '{text}' (情感: {emotion or 'default'})")
+        # 🔥 动态CFG：根据文本长度自动调整
+        if cfg_value == config.VOXCPM_CFG_VALUE:  # 只在使用默认值时动态调整
+            cfg_value = self._calculate_dynamic_cfg(text)
+        
+        logger.info(f"🎵 TTS 合成: '{text}' (情感: {emotion or 'default'}, CFG: {cfg_value})")
         start_time = time.time()
         
         try:
-            # 清理 CUDA 缓存 (轻量级)
-            self.cleanup_cuda()
+            # 🔥 移除每次合成前的 cleanup_cuda()
+            # torch.cuda.empty_cache() 会导致 GPU 同步，增加首包延迟
+            # 只在 OOM 异常时清理即可
             
             # 3. 流式推理
             wav_generator = self._model.generate_streaming(

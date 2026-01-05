@@ -160,22 +160,95 @@
 ```
 core/
 ├── conversation_summarizer.py  # 对话摘要生成器
-├── knowledge_monitor.py        # 后台小祥
-├── memory_injector.py          # 记忆注入到 prompt
+├── knowledge_monitor.py        # 后台小祥 + 三元组抽取
+├── memory_injector.py          # 记忆注入 + Hybrid 检索
+├── memory_reviewer.py          # LLM 驱动的记忆审核
 └── response_handler.py         # 集成摘要触发
 
 knowledge/
 ├── __init__.py                 # KnowledgeBase 主类
-├── memory_manager.py           # 衰减逻辑
-└── retrieval.py                # 检索逻辑
+├── memory_manager.py           # 衰减逻辑 + 级联删除
+├── retrieval.py                # 检索逻辑
+├── triple_store.py             # 🔥 三元组存储 (LPMM)
+├── entity_extractor.py         # 🔥 实体/关系抽取
+└── hybrid_retriever.py         # 🔥 Hybrid 检索 (Vector + Graph)
 ```
 
 ---
 
-## 未来改进方向
+## LPMM 三元组存储
 
-1. **定时衰减任务**：目前衰减需要手动调用，可以添加定时任务
-2. **主题标签**：添加 `topic` 字段分类记忆 (preference, personal, memory, promise)
+### 架构设计
+
+```
+                     用户输入
+                         │
+         ┌───────────────┴───────────────┐
+         ▼                               ▼
+┌─────────────────┐            ┌─────────────────┐
+│   Vector Store  │            │   Triple Store  │
+│   (LanceDB)     │            │   (JSONL)       │
+│   粗筛 Top-10   │            │   关系遍历      │
+└────────┬────────┘            └────────┬────────┘
+         │                               │
+         └───────────┬───────────────────┘
+                     ▼
+              ┌─────────────┐
+              │  Reranker   │
+              │  融合排序   │
+              └──────┬──────┘
+                     ▼
+              注入 LLM Context
+```
+
+### 三元组结构
+
+```python
+{
+    "id": "abc123",
+    "subject": "主人",
+    "predicate": "喜欢",
+    "object": "拉面",
+    "source_memory_ids": ["mem_001", "mem_002"],  # 佐证记忆
+    "metadata": {
+        "negation": false,      # 是否否定
+        "frequency": "很",      # 程度副词
+        "condition": null       # 条件
+    }
+}
+```
+
+### 三元组与记忆的关系
+
+- 三元组是记忆的**副产物**
+- 一条三元组可被多条记忆佐证
+- 记忆删除时，从三元组移除佐证
+- 当所有佐证消失时，三元组自动删除
+
+---
+
+## 更新：衰减参数
+
+| 类型      | 触发天数 | 衰减系数 | 删除阈值       |
+| :-------- | :------- | :------- | :------------- |
+| `system`  | 永不     | -        | -              |
+| `core`    | 永不     | -        | -              |
+| `fact`    | 5 天     | ×0.85    | < 0.2 触发审核 |
+| `episode` | 3 天     | ×0.6     | 7 天强制删除   |
+
+### BOOST 防刷机制
+
+- **冷却期**：2 小时内多次使用只算 1 次
+- **每日上限**：每条记忆每天最多 +1.0
+
+---
+
+## 已完成的改进
+
+- [x] **启动时自动衰减**：超过 24h 未衰减则执行
+- [x] **LPMM 三元组存储**：结构化关系检索
+- [x] **Hybrid 检索**：Vector + Graph 融合
+- [x] **级联三元组**：记忆删除时同步清理
 
 ---
 
@@ -228,3 +301,211 @@ knowledge/
 | PROMOTE | category → "core" | -                      |
 | KEEP    | 保持不变          | 重置 importance 到 0.5 |
 | DELETE  | 删除记忆          | 删除记忆               |
+
+---
+
+## 工具结果上下文整理 (ContextManager)
+
+### 设计动机
+
+当小祥调用工具（如 `screenshot`、`web_search`、`knowledge`）后，工具返回的结果包含大量原始信息。
+这些信息对当前回复有用，但**不应直接存入知识库**（太临时），也**不应直接丢弃**（下轮对话可能需要）。
+
+**解决方案**：后台小祥整理工具结果，提取有用上下文，供下轮对话使用。
+
+---
+
+### 工作流程
+
+```
+本轮对话
+    ↓
+小祥调用工具 (screenshot/web_search/knowledge)
+    ↓
+工具结果被收集到 _tool_results_this_turn
+    ↓
+对话结束时，调用 context_manager.prepare_context()
+    ↓
+后台异步调用 LLM 整理（不阻塞主流程）
+    ↓
+结果保存到 _prepared_context
+    ↓
+下轮对话构建 prompt 时，调用 get_prepared_context()
+    ↓
+整理好的上下文注入到 [你检索得知的信息] 区块
+```
+
+---
+
+### 相关文件
+
+| 文件                       | 职责                                        |
+| -------------------------- | ------------------------------------------- |
+| `core/context_manager.py`  | 后台整理逻辑，LLM 调用                      |
+| `core/response_handler.py` | 收集工具结果，触发 `prepare_context()`      |
+| `llm/prompt_builder.py`    | 调用 `get_prepared_context()` 注入到 prompt |
+
+---
+
+### Prompt 设计
+
+**Persona**：
+
+```
+你是丰川祥子的后台程序。
+你和主程序小祥是同一个人——丰川集团大小姐，Ave Mujica 键盘手，自称"本神明"。
+你的任务是整理信息，帮助主程序更好地理解和回应主人。
+```
+
+**任务 Prompt**：
+
+```
+从以下对话和工具调用结果中，提取出**对下次对话可能有用的上下文信息**。
+
+## 本轮对话
+{conversation}
+
+## 工具调用结果
+{tool_results}
+
+## 你的任务
+提取出对主程序小祥理解主人、延续话题有帮助的关键信息。
+
+注意：
+- 只保留有用的信息，不要简单复制
+- 提炼和总结，用 1-2 句话描述
+- 如果没有有用信息，输出空
+```
+
+**示例输出**：
+
+```
+主人正在使用 VS Code 编辑 Python 代码，屏幕上显示的是一个叫 NeuroPet 的项目。
+```
+
+---
+
+### 注入位置
+
+整理好的上下文会被注入到 System Prompt 的最后：
+
+```
+[时间信息]
+...
+
+[你一定要记住的事]
+...
+
+[你记得的事情]
+...
+
+[你检索得知的信息]
+主人正在使用 VS Code 编辑 Python 代码，屏幕上显示的是一个叫 NeuroPet 的项目。
+```
+
+**注意**：这是 **append（追加）** 操作，不会覆盖其他区块。
+
+---
+
+### 与三层记忆的区别
+
+| 机制               | 存储位置 | 生命周期   | 用途                    |
+| ------------------ | -------- | ---------- | ----------------------- |
+| 工具结果上下文     | 内存     | 仅下一轮   | 延续当前话题            |
+| 情境记忆 (episode) | 知识库   | 7-14 天    | "刚才/昨天聊了什么"     |
+| 事实记忆 (fact)    | 知识库   | 衰减后删除 | "你知道我 XX 吗"        |
+| 核心记忆 (core)    | 知识库   | 永久       | 主人姓名/生日等重要事实 |
+
+---
+
+## 服务化架构 (2026-01-05)
+
+### 动机
+
+每次启动程序都需要加载 Embedding 模型（约 34 秒），非常影响使用体验。
+
+### 解决方案
+
+将知识库运行为独立后台服务，通过 RPC 通信：
+
+```
+主程序/GUI/脚本  ──RPC (端口 19876)──▶  知识库服务 (一次启动)
+                                           │
+                                           ▼
+                                      LanceDB + Embedding
+```
+
+### 文件结构
+
+| 文件          | 职责                         |
+| ------------- | ---------------------------- |
+| `server.py`   | 知识库服务端 (Socket RPC)    |
+| `client.py`   | 客户端 + 自动启动 + 兼容代理 |
+| `__init__.py` | 导出 `get_knowledge_client`  |
+
+### 使用方法
+
+**方式一：手动启动服务**
+
+```powershell
+# 终端1 - 服务（一次启动，持久运行）
+.\venv\Scripts\python.exe knowledge\server.py
+
+# 终端2 - 主程序 / GUI / 其他脚本
+.\venv\Scripts\python.exe main.py
+```
+
+**方式二：自动启动**
+
+主程序会自动检测服务是否运行，如果没有则自动启动：
+
+```python
+from knowledge import get_knowledge_client
+
+client = get_knowledge_client()  # 自动启动服务
+client.search("拉面")
+```
+
+### 客户端 API
+
+```python
+from knowledge import KnowledgeClient, KnowledgeBaseProxy
+
+# 方式一：直接使用客户端
+client = KnowledgeClient()
+client.add("主人喜欢拉面", metadata={"category": "fact"})
+client.search("拉面", n_results=3)
+client.delete("mem_123")
+client.update_text("mem_123", "新内容")
+client.update_importance("mem_123", delta=0.3)
+client.get_all()  # 获取所有记录
+
+# 方式二：使用兼容代理（接口与 KnowledgeBase 完全一致）
+kb = KnowledgeBaseProxy()
+kb.add("...")
+kb.search("...")
+```
+
+---
+
+## GUI 管理工具
+
+### 启动
+
+```powershell
+.\venv\Scripts\python.exe scripts\manage_knowledge_gui.py
+# 浏览器访问 http://127.0.0.1:7861
+```
+
+### 功能
+
+| Tab         | 功能                                 |
+| ----------- | ------------------------------------ |
+| 查看/编辑   | 点击表格行选中 → 编辑 → 保存/删除    |
+| ➕ 添加     | 添加新记忆（可选类型）               |
+| 📊 统计     | 查看记忆分类统计 + 导出 TXT          |
+| 🗑️ 批量删除 | 输入多个 ID 批量删除（跳过核心记忆） |
+
+### 批量删除
+
+支持逗号、空格或换行分隔的 ID 列表，自动跳过 `core` 类型记忆。

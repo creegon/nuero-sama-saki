@@ -46,14 +46,31 @@ class KnowledgeMonitor:
 
 {tools_section}
 
+**记忆撰写规范：**
+- ⚠️ **使用第三人称客观描述**（不要用"我知道"开头）
+- 一条记忆只记录一个主题，不要杂糅多个无关信息
+- 包含足够的上下文，让未来能理解这条信息的含义
+
+**记忆分类（在 [ADD] 后用 [类型] 标注）：**
+- `[fact]` - 客观事实：主人的偏好、习惯、环境信息等
+- `[feeling]` - 小祥的主观感受/情绪反应（可以带有角色色彩）
+
+**什么值得记住：**
+✅ 长期事实/偏好："主人喜欢吃拉面" 
+✅ 环境信息："主人的麦克风质量不太好"
+✅ 角色情绪/看法："小祥觉得主人修改参数的行为是黑历史" → [feeling]
+❌ 临时状态："主人现在在写代码"
+❌ 单次事件："主人今天迟到了"
+❌ 占位符文本："[语音输入]"
+❌ 语音识别错误："被误听成xxx"
+❌ 纯技术细节：文件名列表、代码片段
+
 **判断原则：**
-1. 记忆不是越多越好。只记住真正重要的信息。
+1. 记忆不是越多越好。只记住真正重要的、长期有用的信息。
 2. 两条信息看似冲突不一定要删除，可能只是时间变化。
-   例如：「十天前很紧张」和「现在很放松」可以共存。
 3. 如果检索到的记忆**真正影响了小祥的回复**，才算被使用。
-   例如：检索到「主人很紧张」，小祥说「别这么绷着啦」→ 算使用
-   例如：检索到「主人喜欢猫」，小祥在聊天气 → 不算使用
-4. 主人纠正了错误记忆时，需要删除旧的、添加新的。
+4. 主人纠正了错误记忆时，用 UPDATE 修改（不要删除再添加）。
+5. core 类型记忆不能删除，只能用 UPDATE 修改。
 
 **输出格式：**
 可以输出多个操作，每行一个。如果不需要任何操作，只输出 [SKIP]。
@@ -62,46 +79,88 @@ class KnowledgeMonitor:
 
 ---
 对话：
-主人: 我最喜欢吃寿司
-小祥: 原来如此，本神明记住了
+主人: 我最喜欢吃寿司，尤其是三文鱼寿司
+小祥: 诶嘿嘿，我记住了呢～
 
 检索到的记忆：(无)
 
 你的操作：
-[ADD] 主人最喜欢吃寿司
+[ADD][fact] 主人最喜欢吃寿司，尤其是三文鱼寿司
 
 ---
 对话：
-主人: 不对，我不喜欢寿司，我喜欢拉面
-小祥: 欸？我记错了吗
+主人: 不对，我现在更喜欢豚骨拉面了
+小祥: 欸？口味变了吗
 
 检索到的记忆：
-- [mem_123] 主人最喜欢吃寿司
+- [mem_123] 主人最喜欢吃寿司，尤其是三文鱼寿司
 
 你的操作：
-[DELETE:mem_123]
-[ADD] 主人最喜欢吃拉面
+[UPDATE:mem_123] 主人现在更喜欢吃豚骨拉面（之前喜欢寿司，后来口味变了）
 
 ---
 对话：
-主人: 今天天气真好
-小祥: 是啊，适合出门晒太阳
+主人: 这个语音识别老是听错，麦克风太烂了
+小祥: 唔...那确实有点困扰呢
 
-检索到的记忆：
-- [mem_456] 主人喜欢晴天
+检索到的记忆：(无)
 
 你的操作：
-[BOOST:mem_456]
+[ADD][fact] 主人的麦克风质量不太好，语音识别经常出错
 
 ---
 对话：
-主人: 早上好
-小祥: 早啊~
+主人: 你看看这个参数改得像翻白眼...
+小祥: 哼！这是我的黑历史！质疑主人的审美！
+
+检索到的记忆：(无)
+
+你的操作：
+[ADD][feeling] 小祥认为主人修改眼神参数的效果是"黑历史"，对此感到尴尬和不满
+
+---
+对话：
+小祥尝试调用视觉模块失败
+小祥: 气死我了！为什么又报错！
+
+检索到的记忆：(无)
+
+你的操作：
+[ADD][feeling] 小祥在调用视觉模块失败时会感到愤怒
+
+---
+对话：
+主人: 今天好累，我在写代码呢
+小祥: 辛苦了
 
 检索到的记忆：(无)
 
 你的操作：
 [SKIP]
+（"今天好累"和"在写代码"都是临时状态，不是长期事实）
+
+---
+对话：
+主人: [语音输入]
+小祥: 嗯？
+
+检索到的记忆：(无)
+
+你的操作：
+[SKIP]
+（"[语音输入]"是占位符，不是实际内容）
+
+---
+对话：
+主人: 我最近在做一个桌宠项目，用的 Live2D
+小祥: 听起来很有趣
+
+检索到的记忆：
+- [mem_456] 主人喜欢编程
+
+你的操作：
+[BOOST:mem_456]
+[ADD][fact] 主人最近在开发一个桌宠项目，使用 Live2D 技术
 
 ---
 现在，请分析以下对话和检索到的记忆，决定需要执行的操作。
@@ -171,6 +230,14 @@ class KnowledgeMonitor:
         if self._queue is None:
             logger.warning("⚠️ 知识监控器队列未创建，跳过分析")
             return
+
+        # 🔥 调试日志
+        logger.debug(f"🧠 后台小祥收到对话:")
+        logger.debug(f"   主人: {user_message[:50]}...")
+        logger.debug(f"   检索到 {len(retrieved_memories or [])} 条相关记忆")
+        if retrieved_memories:
+            for mem in retrieved_memories[:3]:
+                logger.debug(f"      - [{mem.get('id')}] {mem.get('text', '')[:40]}...")
 
         # 加入队列异步处理
         await self._queue.put({
@@ -276,24 +343,32 @@ class KnowledgeMonitor:
             try:
                 # [SKIP]
                 if "[SKIP]" in line:
-                    logger.debug("🧠 后台小祥: 跳过，不做操作")
+                    reason = line.replace("[SKIP]", "").strip()
+                    logger.debug(f"🧠 后台小祥 [SKIP]: {reason if reason else '无理由'}")
                     continue
 
-                # [ADD] 内容
-                if line.startswith("[ADD]"):
-                    content = line[5:].strip()
+                # [ADD] 内容  或  [ADD][类型] 内容
+                add_match = re.match(r'\[ADD\](?:\[(fact|feeling)\])?\s*(.+)', line)
+                if add_match:
+                    category = add_match.group(1) or "fact"  # 默认 fact
+                    content = add_match.group(2).strip()
                     if content:
                         doc_id = self.kb.add_with_dedup(
                             text=content,
                             metadata={
-                                "category": "fact",  # 🔥 事实记忆
+                                "category": category,  # 🔥 支持 fact/feeling
                                 "source": "background_ai",
                                 "verified": False,  # 后台小祥推断的，未经用户确认
                             },
                             similarity_threshold=0.85
                         )
-                        logger.info(f"🧠 后台小祥 [ADD]: [{doc_id}] {content[:50]}...")
+                        logger.info(f"🧠 后台小祥 [ADD][{category}]: [{doc_id}]")
+                        logger.debug(f"   📝 内容: {content}")
+                        
+                        # 🔥 异步抽取三元组
+                        asyncio.create_task(self._extract_triples(doc_id, content))
                     continue
+
 
                 # [UPDATE:mem_id] 新内容
                 update_match = re.match(r'\[UPDATE:(\w+)\]\s*(.+)', line)
@@ -301,39 +376,123 @@ class KnowledgeMonitor:
                     mem_id = update_match.group(1)
                     new_content = update_match.group(2).strip()
                     if new_content:
-                        # 删除旧的，添加新的
-                        self.kb.delete(mem_id)
-                        self.kb.add(
-                            text=new_content,
-                            metadata={
-                                "category": "fact",  # 🔥 事实记忆
-                                "source": "background_ai",
-                                "updated_from": mem_id,
-                                "verified": True,  # 更新=用户纠正过
-                            }
-                        )
-                        logger.info(f"🧠 后台小祥 [UPDATE]: {mem_id} → {new_content[:50]}...")
+                        # 获取旧内容用于对比（使用客户端 API）
+                        old_content = ""
+                        try:
+                            records = self.kb.get_all()
+                            for r in records:
+                                if r["id"] == mem_id:
+                                    old_content = r.get("text", "")
+                                    break
+                        except:
+                            pass
+                        
+                        success = self.kb.update_text(mem_id, new_content)
+                        if success:
+                            logger.info(f"🧠 后台小祥 [UPDATE]: {mem_id}")
+                            logger.debug(f"   📝 旧内容: {old_content}")
+                            logger.debug(f"   📝 新内容: {new_content}")
+                        else:
+                            logger.warning(f"🧠 后台小祥 [UPDATE] 失败: {mem_id} 不存在")
                     continue
 
                 # [BOOST:mem_id]
                 boost_match = re.match(r'\[BOOST:(\w+)\]', line)
                 if boost_match:
                     mem_id = boost_match.group(1)
+                    # 获取内容用于日志（使用客户端 API）
+                    mem_content = ""
+                    try:
+                        records = self.kb.get_all()
+                        for r in records:
+                            if r["id"] == mem_id:
+                                mem_content = r.get("text", "")
+                                break
+                    except:
+                        pass
+                    
                     success = self.kb.update_importance(mem_id, delta=0.3)
                     if success:
                         logger.info(f"🧠 后台小祥 [BOOST]: {mem_id} 重要性 +0.3")
+                        logger.debug(f"   📝 内容: {mem_content}")
                     continue
 
                 # [DELETE:mem_id]
                 delete_match = re.match(r'\[DELETE:(\w+)\]', line)
                 if delete_match:
                     mem_id = delete_match.group(1)
-                    self.kb.delete(mem_id)
-                    logger.info(f"🧠 后台小祥 [DELETE]: {mem_id}")
+                    
+                    # 🔥 检查是否为 core 记忆，core 不允许删除（使用客户端 API）
+                    is_core = False
+                    delete_content = ""
+                    try:
+                        records = self.kb.get_all()
+                        for r in records:
+                            if r["id"] == mem_id:
+                                meta = r.get("metadata", {})
+                                if meta.get("category") == "core":
+                                    is_core = True
+                                delete_content = r.get("text", "")
+                                break
+                    except:
+                        pass
+                    
+                    if is_core:
+                        logger.warning(f"⛔ 后台小祥 [DELETE] 拒绝: {mem_id} 是 core 记忆，不允许删除")
+                        logger.debug(f"   📝 内容: {delete_content}")
+                    else:
+                        self.kb.delete(mem_id)
+                        logger.info(f"🧠 后台小祥 [DELETE]: {mem_id}")
+                        logger.debug(f"   📝 已删除内容: {delete_content}")
+                        
+                        # 🔥 级联删除关联三元组
+                        try:
+                            from knowledge.triple_store import get_triple_store
+                            triple_store = get_triple_store()
+                            deleted_triples = triple_store.remove_source(mem_id)
+                            if deleted_triples:
+                                logger.info(f"🔗 级联删除 {len(deleted_triples)} 条三元组")
+                        except Exception as te:
+                            logger.debug(f"级联删除三元组失败: {te}")
                     continue
 
             except Exception as e:
                 logger.error(f"🧠 执行操作失败 [{line}]: {e}")
+    
+    async def _extract_triples(self, memory_id: str, content: str):
+        """
+        🔥 异步从记忆内容中抽取三元组
+        
+        Args:
+            memory_id: 记忆 ID（作为三元组的佐证来源）
+            content: 记忆文本内容
+        """
+        try:
+            from knowledge.entity_extractor import get_entity_extractor
+            from knowledge.triple_store import get_triple_store
+            
+            extractor = get_entity_extractor()
+            if not extractor.llm_client:
+                extractor.set_llm_client(self.llm_client)
+            
+            # 抽取三元组
+            triples = await extractor.extract(content)
+            
+            if triples:
+                triple_store = get_triple_store()
+                for t in triples:
+                    triple_store.add(
+                        subject=t.subject,
+                        predicate=t.predicate,
+                        obj=t.object,
+                        source_memory_id=memory_id,
+                        metadata=t.metadata
+                    )
+                logger.info(f"🔗 抽取三元组: {len(triples)} 条 ← [{memory_id}]")
+                for t in triples:
+                    logger.debug(f"   → {t}")
+        except Exception as e:
+            logger.debug(f"三元组抽取失败: {e}")
 
     def is_enabled(self) -> bool:
         """检查监控器是否启用"""

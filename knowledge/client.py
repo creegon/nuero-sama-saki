@@ -141,6 +141,32 @@ class KnowledgeClient:
     def count(self) -> int:
         """返回知识条目数量"""
         return self._send_request("count")
+    
+    def add_with_dedup(self, text: str, metadata: Dict = None, similarity_threshold: float = 0.85) -> str:
+        """去重添加知识条目"""
+        return self._send_request("add_with_dedup", {
+            "text": text,
+            "metadata": metadata,
+            "similarity_threshold": similarity_threshold
+        })
+    
+    def update_importance(self, doc_id: str, delta: float = 0.5) -> bool:
+        """更新记忆重要性"""
+        return self._send_request("update_importance", {
+            "doc_id": doc_id,
+            "delta": delta
+        })
+    
+    def update_text(self, doc_id: str, new_text: str) -> bool:
+        """更新记忆文本内容"""
+        return self._send_request("update_text", {
+            "doc_id": doc_id,
+            "new_text": new_text
+        })
+    
+    def get_all(self) -> List[Dict]:
+        """获取所有记录"""
+        return self._send_request("get_all")
 
 
 # ============================================================
@@ -241,6 +267,10 @@ class KnowledgeBaseProxy:
         self._ensure_client()
         return self._client.add(text, metadata, doc_id)
     
+    def add_with_dedup(self, text: str, metadata: Dict = None, similarity_threshold: float = 0.85) -> str:
+        self._ensure_client()
+        return self._client.add_with_dedup(text, metadata, similarity_threshold)
+    
     def search(self, query: str, n_results: int = 3, where: Dict = None) -> List[Dict]:
         self._ensure_client()
         return self._client.search(query, n_results, where)
@@ -256,6 +286,18 @@ class KnowledgeBaseProxy:
     def count(self) -> int:
         self._ensure_client()
         return self._client.count()
+    
+    def update_importance(self, doc_id: str, delta: float = 0.5) -> bool:
+        self._ensure_client()
+        return self._client.update_importance(doc_id, delta)
+    
+    def update_text(self, doc_id: str, new_text: str) -> bool:
+        self._ensure_client()
+        return self._client.update_text(doc_id, new_text)
+    
+    def get_all(self) -> List[Dict]:
+        self._ensure_client()
+        return self._client.get_all()
 
 
 # ============================================================

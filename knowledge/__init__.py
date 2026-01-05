@@ -4,6 +4,11 @@
 
 使用 LanceDB 替代 ChromaDB，解决与 PyTorch/ONNX 的 DLL 冲突问题
 LanceDB 是纯 Python 嵌入式向量数据库，类似 SQLite，无外部依赖
+
+服务化架构：
+    - 推荐使用 get_knowledge_client() 通过 RPC 访问知识库服务
+    - 服务器: python knowledge/server.py
+    - 客户端会自动启动服务器（如果未运行）
 """
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -36,18 +41,36 @@ _os.environ["USE_TF"] = "0"  # 额外保险
 _os.environ["USE_TORCH"] = "1"  # 明确使用 PyTorch
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Core Implementation
+# Core Implementation (直接访问，仅限 server.py 使用)
 from .core import KnowledgeBase, get_knowledge_base
+
+# Client (推荐使用，通过 RPC 访问)
+from .client import (
+    KnowledgeClient, 
+    KnowledgeBaseProxy,
+    get_knowledge_client,
+    ensure_knowledge_server,
+    start_knowledge_server
+)
 
 # Helpers (Explicitly exported)
 from .retrieval import MemoryRetriever, create_memory_retriever
 from .memory_manager import MemoryManager, create_memory_manager
 
 __all__ = [
+    # Direct access (仅限服务端)
     "KnowledgeBase",
     "get_knowledge_base",
+    # Client access (推荐)
+    "KnowledgeClient",
+    "KnowledgeBaseProxy", 
+    "get_knowledge_client",
+    "ensure_knowledge_server",
+    "start_knowledge_server",
+    # Helpers
     "MemoryRetriever", 
     "create_memory_retriever",
     "MemoryManager",
     "create_memory_manager"
 ]
+

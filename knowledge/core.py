@@ -250,10 +250,6 @@ class KnowledgeBase:
         return "\n".join(lines)
     
     # 委托给 Helper 的方法
-    def get_system_context(self) -> str:
-        from knowledge.retrieval import create_memory_retriever
-        return create_memory_retriever(self).get_system_context()
-    
     def get_recent_memories(self, n: int = 5, exclude_system: bool = True) -> str:
         from knowledge.retrieval import create_memory_retriever
         return create_memory_retriever(self).get_recent_memories(n, exclude_system)

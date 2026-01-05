@@ -153,6 +153,19 @@ class NeuroPet:
                 get_recent_context=lambda: self.response_handler.get_recent_context() if self.response_handler else "(暂无)"
             )
             
+            # 🔥 静默屏幕观察器 (后台小祥默默观察主人)
+            from core.screen_observer import get_screen_observer
+            try:
+                from knowledge import get_knowledge_base
+                kb = get_knowledge_base()
+                self.screen_observer = get_screen_observer(
+                    llm_client=self.llm_client,
+                    knowledge_base=kb
+                )
+            except Exception as e:
+                self.log.warning(f"⚠️ 屏幕观察器初始化跳过 (知识库未就绪): {e}")
+                self.screen_observer = None
+            
             # 初始化行为
             from core.behaviors.greeting import AutoGreeter
             self.greeter = AutoGreeter(
@@ -531,6 +544,10 @@ class NeuroPet:
             # 启动主动聊天
             if self.proactive_chat:
                 self.proactive_chat.start(self.state_machine)
+
+            # 🔥 启动静默屏幕观察器
+            if self.screen_observer:
+                self.screen_observer.start()
 
             while self._is_running:
                 await self.listen_and_respond()

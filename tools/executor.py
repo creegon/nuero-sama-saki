@@ -182,13 +182,15 @@ class ToolExecutor:
             
         logger.info(f"🔧 检测到工具调用: {tool_name}" + (f" (args: {tool_args})" if tool_args else ""))
         
-        # 情绪检测
+        # 情绪检测（取第一个情绪标签）
         emotion_match = re.match(r'^\[(\w+)\]', before_text)
         detected_emotion = emotion_match.group(1).lower() if emotion_match else "curious"
         
-        # 清理文本
-        clean_before = re.sub(r'^\[\w+\]\s*', '', before_text)
-        clean_before = re.sub(r'\s+', '', clean_before)
+        # 🔥 清理文本：移除所有情绪标签（不仅仅是开头的）
+        from llm.character_prompt import EMOTION_TAGS
+        emotion_pattern = r'\[(' + '|'.join(EMOTION_TAGS) + r')\]'
+        clean_before = re.sub(emotion_pattern, '', before_text, flags=re.IGNORECASE)
+        clean_before = re.sub(r'\s+', ' ', clean_before).strip()  # 合并空格
         
         # 设置表情
         if on_expression:

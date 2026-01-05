@@ -109,8 +109,14 @@ class ConversationSummarizer:
         
         conversation_text = "\n".join(formatted[-20:])  # 最多取20条
         
-        prompt = f"""请简洁概括以下对话的主要话题和内容（不超过50字）：
+        prompt = f"""请简洁概括以下对话的主要话题和具体内容（80-120字）：
 
+要求：
+1. 包含具体的话题/关键词（不要只说"聊天"）
+2. 提及讨论的具体内容或观点
+3. 如有特别的互动（如调侃、吐槽），也要提及
+
+对话内容：
 {conversation_text}
 
 摘要："""
@@ -129,7 +135,7 @@ class ConversationSummarizer:
             summary = full_response.strip()
             summary = summary.replace("摘要：", "").replace("摘要:", "").strip()
             
-            return summary[:100]  # 限制长度
+            return summary[:200]  # 增加长度限制
             
         except Exception as e:
             logger.error(f"LLM 摘要生成失败: {e}")

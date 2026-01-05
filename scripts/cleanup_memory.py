@@ -73,3 +73,39 @@ def get_memory_stats() -> dict:
         pass
     
     return stats
+
+
+# 定期清理任务
+_cleanup_task = None
+
+
+def start_periodic_cleanup(interval_seconds: int = 300):
+    """
+    启动定期内存清理任务
+    
+    Args:
+        interval_seconds: 清理间隔（秒），默认 5 分钟
+    """
+    import asyncio
+    import threading
+    
+    global _cleanup_task
+    
+    async def _cleanup_loop():
+        while True:
+            await asyncio.sleep(interval_seconds)
+            cleanup_all(aggressive=False)
+            logger.debug(f"🧹 定期清理完成 (间隔: {interval_seconds}s)")
+    
+    def _run_in_thread():
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(_cleanup_loop())
+        except Exception as e:
+            logger.debug(f"定期清理线程异常: {e}")
+    
+    if _cleanup_task is None:
+        _cleanup_task = threading.Thread(target=_run_in_thread, daemon=True)
+        _cleanup_task.start()
+        logger.info(f"🧹 定期内存清理已启动 (间隔: {interval_seconds}s)")

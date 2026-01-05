@@ -34,14 +34,6 @@ class MemoryInjector:
             self._kb = get_knowledge_base()
         return self._kb
     
-    def get_system_context(self) -> str:
-        """获取系统上下文"""
-        try:
-            return self._get_kb().get_system_context()
-        except Exception as e:
-            logger.debug(f"获取系统上下文失败: {e}")
-            return ""
-    
     def get_recent_memories(self, n: int = 5) -> str:
         """获取最近记忆（一般层）"""
         try:
@@ -75,6 +67,27 @@ class MemoryInjector:
             logger.debug(f"检索原始记忆失败: {e}")
             return []
     
+    def hybrid_search(self, query: str, top_k: int = 5) -> str:
+        """
+        🔥 Hybrid 检索（Vector + Triple Graph）
+        
+        结合向量语义搜索和三元组关系检索
+        """
+        try:
+            from knowledge.hybrid_retriever import get_hybrid_retriever
+            from knowledge.triple_store import get_triple_store
+            
+            retriever = get_hybrid_retriever()
+            if not retriever.kb:
+                retriever.set_stores(self._get_kb(), get_triple_store())
+            
+            results = retriever.search(query, top_k=top_k)
+            return retriever.format_for_prompt(results)
+        except Exception as e:
+            logger.debug(f"Hybrid 检索失败: {e}")
+            # 降级到普通检索
+            return self.search_related_memories(query)
+
     def get_time_context(self) -> str:
         """
         🔥 获取时间感知上下文
@@ -135,7 +148,7 @@ class MemoryInjector:
                         # 去除时间戳前缀（如果有）
                         import re
                         episode_text = re.sub(r'^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]\s*', '', episode_text)
-                        context_parts.append(f"你{time_ago}和主人聊过：{episode_text[:80]}")
+                        context_parts.append(f"你{time_ago}和主人聊过：{episode_text[:150]}")
         except Exception as e:
             logger.debug(f"检索 episode 失败: {e}")
         
@@ -161,12 +174,7 @@ class MemoryInjector:
         if time_context:
             system_prompt += f"\n\n{time_context}"
         
-        # 2. 系统上下文/背景设定（始终注入）
-        system_context = self.get_system_context()
-        if system_context:
-            system_prompt += f"\n\n{system_context}"
-        
-        # 3. 核心层：高重要性记忆（始终注入）
+        # 2. 核心层：高重要性记忆（始终注入）
         important_memories = self.get_important_memories()
         if important_memories:
             system_prompt += f"\n\n{important_memories}"

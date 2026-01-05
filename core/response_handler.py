@@ -49,6 +49,7 @@ class ResponseHandler:
         self.conversation_history: List[dict] = []
         self.current_emotion: Optional[str] = None
         self._last_retrieved_memories: List[dict] = []  # 🔥 保存检索到的记忆，传给后台小祥
+        self._tool_results_this_turn: Dict[str, str] = {}  # 🔥 本轮工具调用结果，供后台小祥整理
 
         # 🔥 打断取消机制
         self._cancelled = False  # 取消标志
@@ -440,6 +441,10 @@ class ResponseHandler:
 
         if not tool_name:
             return
+        
+        # 🔥 收集工具结果（供后台小祥整理）
+        if tool_result and not tool_result.startswith("IMAGE_RESULT:"):
+            self._tool_results_this_turn[tool_name] = tool_result[:500]  # 限制长度
 
         # 🔥 处理工具调用后面的文本
         if after_text:
@@ -590,6 +595,27 @@ class ResponseHandler:
                     user_text, response, self._last_retrieved_memories
                 )
             )
+        
+        # 🔥 后台整理工具调用结果（供下轮对话使用）
+        if self._tool_results_this_turn:
+            try:
+                from core.context_manager import get_context_manager
+                context_manager = get_context_manager(self.llm_client)
+                
+                # 构建对话摘要
+                clean_response = re.sub(r'\[\w+\]', '', response).strip()
+                conversation = f"主人: {user_text}\n小祥: {clean_response}"
+                
+                # 后台异步整理（不阻塞主流程）
+                asyncio.create_task(
+                    context_manager.prepare_context(conversation, self._tool_results_this_turn)
+                )
+                logger.debug(f"📋 启动工具结果整理 ({len(self._tool_results_this_turn)} 个结果)")
+            except Exception as e:
+                logger.debug(f"工具结果整理启动失败: {e}")
+            finally:
+                # 清空本轮结果
+                self._tool_results_this_turn = {}
     
     async def _summarize_and_truncate(self):
         """摘要旧对话并截断历史"""

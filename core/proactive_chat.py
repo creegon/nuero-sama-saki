@@ -245,16 +245,22 @@ class ProactiveChatManager:
                     if self.silent_until > 0 and time.time() > self.silent_until:
                         self.exit_silent_mode()
                     else:
+                        logger.debug("🤫 静默模式中，跳过主动聊天检查")
                         continue
                 
                 # 状态检查 - 只在空闲时触发
                 if self._state_machine and self._state_machine.is_busy:
+                    logger.debug(f"💬 状态机忙碌中 (state={self._state_machine._state})，跳过主动聊天")
                     continue
                 
                 # 空闲时间检查
                 idle_time = time.time() - self.last_interaction_time
                 if idle_time < self.min_idle_time:
+                    logger.debug(f"💬 空闲时间不足 ({idle_time:.0f}s < {self.min_idle_time}s)")
                     continue
+                
+                # 🔥 到达这里说明条件都满足了
+                logger.info(f"💬 主动聊天检查: 空闲 {idle_time:.0f}s，开始判断...")
                 
                 # 判断是否要说话
                 await self._check_and_maybe_request(idle_time)

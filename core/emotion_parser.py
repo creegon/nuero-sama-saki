@@ -29,6 +29,10 @@ class EmotionParser:
         特殊处理: "[pout] [CALL:xxx] 文本" -> [(\"pout\", \"文本\")]
         工具调用会在解析时立即执行，不等待播放
         """
+        # 🔥 防御性处理：修复 [xxx/yyy] 格式（只保留第一个情绪）
+        # 例如 [neutral/shy] -> [neutral]
+        text = re.sub(r'\[(\w+)/\w+\]', r'[\1]', text)
+        
         # 先执行工具调用（立即异步执行，不阻塞 TTS）
         if self.tool_executor:
             self._execute_inline_tool_calls(text)
@@ -59,9 +63,19 @@ class EmotionParser:
             else:
                 end = len(text)
             
+            
             segment_text = text[start:end]
-            # 清理空白
-            segment_text = re.sub(r'\s+', '', segment_text.strip())
+            
+            # 🔥 移除所有情绪标签（确保TTS文本干净）
+            segment_text = re.sub(emotion_pattern, '', segment_text, flags=re.IGNORECASE)
+            
+            # 🔥 移除工具调用（以防有残留）
+            if self.tool_executor:
+                segment_text = self.tool_executor.remove_tool_calls(segment_text)
+            
+            # 清理多余空白（合并连续空格为单个空格，而不是完全删除）
+            segment_text = re.sub(r'\s+', ' ', segment_text).strip()
+
             
             if segment_text:
                 segments.append((emotion, segment_text))
@@ -76,7 +90,7 @@ class EmotionParser:
         # 检查第一个标签之前是否有文本
         if matches[0].start() > 0:
             before_text = text[:matches[0].start()]
-            before_text = re.sub(r'\s+', '', before_text.strip())
+            before_text = re.sub(r'\s+', ' ', before_text).strip()
             if before_text:
                 segments.insert(0, ("neutral", before_text))
         

@@ -19,7 +19,7 @@ class BackgroundServices:
         self._live2d_thread = None
 
     def start_knowledge_service(self):
-        """预加载知识库 (同步阻塞)"""
+        """预加载知识库 (通过客户端连接服务)"""
         # 优先读取 config，其次环境变量
         enable_knowledge = getattr(config, "ENABLE_KNOWLEDGE", False) or \
                            (os.getenv("ENABLE_KNOWLEDGE", "").lower() == "true")
@@ -28,15 +28,15 @@ class BackgroundServices:
             self.log.warning("⚠️ 知识库已禁用 (config.ENABLE_KNOWLEDGE=False)")
             return
 
-        # 🔥 直接在主进程预加载知识库单例
-        # 这样可以确保 BGE 模型在启动时就加载完成
-        self.log.info("📚 正在预加载知识库...")
+        # 🔥 使用客户端连接知识库服务（自动启动服务）
+        self.log.info("📚 正在连接知识库服务...")
         try:
-            from knowledge import get_knowledge_base
-            kb = get_knowledge_base()  # 触发 BGE 模型加载
-            self.log.info(f"✅ 知识库预加载完成: {kb.count()} 条记录")
+            from knowledge import get_knowledge_client, KnowledgeBaseProxy
+            client = get_knowledge_client()  # 自动启动服务
+            kb_proxy = KnowledgeBaseProxy()  # 兼容 KnowledgeBase 接口
+            self.log.info(f"✅ 知识库服务已连接: {client.count()} 条记录")
         except Exception as e:
-            self.log.error(f"❌ 知识库预加载失败: {e}")
+            self.log.error(f"❌ 知识库服务连接失败: {e}")
             import traceback
             traceback.print_exc()
             return
@@ -51,7 +51,7 @@ class BackgroundServices:
                     from core.knowledge_monitor import KnowledgeMonitor
                     self.log.info("🧠 初始化知识监控器...")
                     
-                    self.pet.knowledge_monitor = KnowledgeMonitor(self.pet.llm_client, kb)
+                    self.pet.knowledge_monitor = KnowledgeMonitor(self.pet.llm_client, kb_proxy)
                     self.pet.knowledge_monitor.start()
                     
                     # 动态更新 ResponseHandler
@@ -102,6 +102,11 @@ class BackgroundServices:
                 set_live2d_controller(controller)
                 self.pet._live2d_controller = controller
                 
+                # 🎯 连接交互信号
+                controller._sig_text_input.connect(self._on_text_input)
+                controller._sig_interaction.connect(self._on_interaction)
+                controller._sig_exit_program.connect(self._on_exit_program)
+                
                 if self.pet.audio_queue:
                     self.pet.audio_queue.set_live2d_controller(controller)
                 
@@ -130,3 +135,91 @@ class BackgroundServices:
                     self.pet._qt_app.quit()
                 except:
                     pass
+    
+    # ==================== 🎯 交互信号处理 ====================
+    
+    def _on_text_input(self, text: str):
+        """处理文字输入 (从 Qt 线程调用)"""
+        import asyncio
+        
+        self.log.info(f"💬 收到文字输入: {text}")
+        
+        # 在异步线程中处理
+        def run_async():
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self._handle_text_input(text))
+                loop.close()
+            except Exception as e:
+                self.log.error(f"文字输入处理失败: {e}")
+        
+        threading.Thread(target=run_async, daemon=True).start()
+    
+    async def _handle_text_input(self, text: str):
+        """异步处理文字输入"""
+        if not self.pet.response_handler:
+            self.log.warning("ResponseHandler 未初始化")
+            return
+        
+        # 更新交互时间
+        if self.pet.proactive_chat:
+            self.pet.proactive_chat.update_interaction_time()
+        
+        # 处理文字输入
+        await self.pet.response_handler.process_user_input(text, was_interrupted=False)
+    
+    def _on_interaction(self, prompt: str):
+        """处理触摸/拖动交互 (从 Qt 线程调用)"""
+        import asyncio
+        
+        self.log.info(f"🎯 收到交互: {prompt}")
+        
+        # 在异步线程中处理
+        def run_async():
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self._handle_interaction(prompt))
+                loop.close()
+            except Exception as e:
+                self.log.error(f"交互处理失败: {e}")
+        
+        threading.Thread(target=run_async, daemon=True).start()
+    
+    async def _handle_interaction(self, prompt: str):
+        """异步处理交互"""
+        if not self.pet.response_handler:
+            self.log.warning("ResponseHandler 未初始化")
+            return
+        
+        # 更新交互时间
+        if self.pet.proactive_chat:
+            self.pet.proactive_chat.update_interaction_time()
+        
+        # 将交互 prompt 作为用户输入处理
+        await self.pet.response_handler.process_user_input(prompt, was_interrupted=False)
+    
+    def _on_exit_program(self):
+        """处理退出程序请求"""
+        self.log.info("🚪 收到退出程序请求")
+        
+        # 设置退出标志
+        self.pet._is_running = False
+        
+        # 触发优雅退出
+        if self.pet._qt_app:
+            try:
+                from PyQt5.QtCore import QMetaObject, Qt
+                QMetaObject.invokeMethod(self.pet._qt_app, "quit", Qt.QueuedConnection)
+            except:
+                pass
+        
+        # 发送 KeyboardInterrupt 信号给主线程
+        import signal
+        import os as _os
+        try:
+            _os.kill(_os.getpid(), signal.SIGINT)
+        except:
+            pass
+

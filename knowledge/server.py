@@ -145,6 +145,13 @@ class KnowledgeServer:
                 doc_id=params.get("doc_id")
             )
         
+        elif method == "add_with_dedup":
+            return self.kb.add_with_dedup(
+                text=params["text"],
+                metadata=params.get("metadata"),
+                similarity_threshold=params.get("similarity_threshold", 0.85)
+            )
+        
         elif method == "search":
             return self.kb.search(
                 query=params["query"],
@@ -164,6 +171,39 @@ class KnowledgeServer:
         
         elif method == "count":
             return self.kb.count()
+        
+        elif method == "update_importance":
+            return self.kb.update_importance(
+                doc_id=params["doc_id"],
+                delta=params.get("delta", 0.5)
+            )
+        
+        elif method == "update_text":
+            # 使用 MemoryManager 更新文本
+            from knowledge.memory_manager import create_memory_manager
+            manager = create_memory_manager(self.kb)
+            return manager.update_text(
+                doc_id=params["doc_id"],
+                new_text=params["new_text"]
+            )
+        
+        elif method == "get_all":
+            # 获取所有记录（用于 GUI）
+            import json
+            all_data = self.kb._table.to_pandas()
+            records = []
+            for _, row in all_data.iterrows():
+                metadata = row.get("metadata", "{}")
+                try:
+                    meta = json.loads(metadata) if isinstance(metadata, str) else metadata
+                except:
+                    meta = {}
+                records.append({
+                    "id": row["id"],
+                    "text": row.get("text", ""),
+                    "metadata": meta
+                })
+            return records
         
         elif method == "ping":
             return "pong"

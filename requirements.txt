@@ -4,23 +4,43 @@
 # For RTX 4090, run this command BEFORE pip install -r requirements.txt:
 #   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# STT (Speech to Text)
-pyaudio>=0.2.14
-faster-whisper>=1.0.0
+# ===== Core Dependencies =====
+loguru>=0.7.0
+numpy>=1.24.0
+scipy>=1.10.0
 
-# LLM
+# ===== LLM (OpenAI API Compatible) =====
 openai>=1.0.0
 httpx>=0.24.0
 
-# TTS
+# ===== TTS (VoxCPM) =====
 gradio_client>=1.4.0
 sounddevice>=0.4.6
-scipy>=1.10.0
+soundfile>=0.12.0
+voxcpm>=1.5.0
 
-# Knowledge Base (ChromaDB)
-chromadb>=1.4.0
+# ===== STT (Speech Recognition) =====
+# FunASR Paraformer & FireRedASR
+pyaudio>=0.2.14
+funasr>=1.0.0
+sentencepiece>=0.1.99
+
+# ===== Knowledge Base (LanceDB + Embedding) =====
+lancedb>=0.3.0
+pyarrow>=14.0.0
 sentence-transformers>=2.2.0
 
-# Utils
-numpy>=1.24.0
-loguru>=0.7.0
+# ===== Web Search =====
+ddgs>=0.1.0
+
+# ===== Live2D Desktop Pet =====
+PyQt5>=5.15.0
+PyOpenGL>=3.1.0
+live2d-py>=0.1.0
+
+# ===== Vision (Screenshot) =====
+Pillow>=10.0.0
+mss>=9.0.0
+
+# ===== Utils =====
+aiofiles>=23.0.0

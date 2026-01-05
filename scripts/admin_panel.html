@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 NeuroPet 管理面板</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: #475569;
+            --shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Main Layout */
+        .main-container {
+            display: flex;
+            height: calc(100vh - 60px);
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 200px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            padding: 16px 0;
+            flex-shrink: 0;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 20px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .nav-item:hover {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+        }
+        
+        .nav-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent);
+            border-left: 3px solid var(--accent);
+        }
+        
+        /* Content */
+        .content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .page { display: none; }
+        .page.active { display: block; }
+        
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .search-box {
+            flex: 1;
+            min-width: 180px;
+            position: relative;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 10px 14px 10px 38px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+        
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+        }
+        
+        /* Filter & Sort */
+        .filter-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .filter-group label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        .filter-group select {
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 500;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--border); }
+        .btn-sm { padding: 6px 10px; font-size: 11px; }
+        
+        /* Selection Info */
+        .selection-info {
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .selection-info strong {
+            color: var(--accent);
+        }
+        
+        /* Memory Grid */
+        .memory-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 12px;
+        }
+        
+        .memory-card {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .memory-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-1px);
+        }
+        
+        .memory-card.selected {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+        
+        .memory-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .memory-checkbox {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        
+        .memory-type {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+        
+        .memory-type.core { background: #fbbf24; color: #78350f; }
+        .memory-type.fact { background: #60a5fa; color: #1e3a8a; }
+        .memory-type.preference { background: #f472b6; color: #831843; }
+        .memory-type.feeling { background: #a78bfa; color: #4c1d95; }
+        .memory-type.episode { background: #4ade80; color: #14532d; }
+        .memory-type.system { background: #94a3b8; color: #1e293b; }
+        .memory-type.auto_learned { background: #6366f1; color: #eef2ff; }
+        
+        .memory-id {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            margin-left: auto;
+        }
+        
+        .memory-content {
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            word-break: break-word;
+        }
+        
+        .memory-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        
+        .memory-importance {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .importance-bar {
+            width: 40px;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .importance-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--success), #84cc16);
+            border-radius: 2px;
+        }
+        
+        .memory-actions {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .memory-actions button {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .memory-actions button:hover {
+            background: rgba(255,255,255,0.2);
+            color: var(--text-primary);
+        }
+        
+        /* Config Section */
+        .config-group {
+            margin-bottom: 20px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        
+        .config-group-header {
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.03);
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .config-items {
+            padding: 12px 16px;
+        }
+        
+        .config-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .config-item:last-child { border-bottom: none; }
+        
+        .config-info {
+            flex: 1;
+        }
+        
+        .config-key {
+            font-size: 12px;
+            font-family: monospace;
+            color: var(--accent);
+        }
+        
+        .config-desc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        
+        .config-value {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .config-value input[type="text"],
+        .config-value input[type="number"] {
+            width: 100px;
+            padding: 6px 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 12px;
+            text-align: right;
+        }
+        
+        /* Toggle Switch */
+        .toggle {
+            position: relative;
+            width: 40px;
+            height: 22px;
+        }
+        
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--border);
+            border-radius: 22px;
+            transition: 0.3s;
+        }
+        
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        
+        .toggle input:checked + .toggle-slider { background: var(--accent); }
+        .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+        
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px;
+        }
+        
+        .stat-card {
+            background: var(--bg-card);
+            padding: 16px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active { display: flex; }
+        
+        .modal-content {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 480px;
+            box-shadow: var(--shadow);
+        }
+        
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .modal-header h3 { font-size: 16px; }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        
+        .modal-body { padding: 20px; }
+        
+        .form-group {
+            margin-bottom: 14px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+        }
+        
+        .form-group textarea,
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+        
+        .form-group textarea { min-height: 80px; resize: vertical; }
+        
+        .modal-footer {
+            padding: 14px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .toast.success { border-color: var(--success); }
+        .toast.error { border-color: var(--danger); }
+        
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-secondary);
+        }
+        
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Quick Actions Bar */
+        .quick-actions {
+            background: var(--bg-secondary);
+            padding: 10px 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>🧠 NeuroPet 管理面板</h1>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span id="statusText">连接中...</span>
+        </div>
+    </header>
+    
+    <div class="main-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="nav-item active" data-page="memories">
+                <span>📚</span>
+                <span>知识库</span>
+            </div>
+            <div class="nav-item" data-page="config">
+                <span>⚙️</span>
+                <span>配置管理</span>
+            </div>
+            <div class="nav-item" data-page="stats">
+                <span>📊</span>
+                <span>统计</span>
+            </div>
+        </nav>
+        
+        <!-- Content -->
+        <main class="content">
+            <!-- Memories Page -->
+            <div id="page-memories" class="page active">
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)" style="width:16px;height:16px;">
+                        <span style="font-size:12px;">全选</span>
+                    </label>
+                    <div class="selection-info">
+                        已选 <strong id="selectedCount">0</strong> 条
+                    </div>
+                    <div style="flex:1;"></div>
+                    <button class="btn btn-danger btn-sm" onclick="deleteSelected()">🗑️ 删除选中</button>
+                    <button class="btn btn-secondary btn-sm" onclick="exportSelected()">📤 导出选中</button>
+                </div>
+                
+                <!-- Toolbar -->
+                <div class="toolbar">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="搜索记忆内容...">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>类型:</label>
+                        <select id="filterType" onchange="applyFilters()">
+                            <option value="">全部</option>
+                            <option value="core">⭐ 核心</option>
+                            <option value="fact">📝 事实</option>
+                            <option value="preference">❤️ 偏好</option>
+                            <option value="feeling">💭 感受</option>
+                            <option value="episode">📅 片段</option>
+                            <option value="auto_learned">🤖 自学</option>
+                            <option value="system">⚙️ 系统</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>排序:</label>
+                        <select id="sortBy" onchange="applyFilters()">
+                            <option value="time_desc">时间 ↓ 最新</option>
+                            <option value="time_asc">时间 ↑ 最早</option>
+                            <option value="importance_desc">重要性 ↓ 最高</option>
+                            <option value="importance_asc">重要性 ↑ 最低</option>
+                        </select>
+                    </div>
+                    
+                    <button class="btn btn-primary btn-sm" onclick="openAddModal()">➕ 添加</button>
+                    <button class="btn btn-secondary btn-sm" onclick="loadMemories()">🔄 刷新</button>
+                </div>
+                
+                <div id="memoryGrid" class="memory-grid">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <div>加载中...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Config Page -->
+            <div id="page-config" class="page">
+                <div class="toolbar">
+                    <span style="font-size:14px;color:var(--text-secondary);">
+                        💡 修改配置立即生效（仅当前运行时，重启后恢复默认）
+                    </span>
+                    <div style="flex:1;"></div>
+                    <button class="btn btn-secondary btn-sm" onclick="loadConfig()">🔄 刷新</button>
+                </div>
+                <div id="configContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Stats Page -->
+            <div id="page-stats" class="page">
+                <div class="toolbar">
+                    <span style="font-size:14px;font-weight:600;">📊 知识库统计</span>
+                    <div style="flex:1;"></div>
+                    <button class="btn btn-secondary btn-sm" onclick="loadStats()">🔄 刷新</button>
+                </div>
+                <div id="statsGrid" class="stats-grid">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Add Modal -->
+    <div id="addModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>➕ 添加记忆</h3>
+                <button class="modal-close" onclick="closeModal('addModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>内容</label>
+                    <textarea id="newMemoryText" placeholder="输入记忆内容..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>类型</label>
+                    <select id="newMemoryType">
+                        <option value="fact">📝 事实 (fact)</option>
+                        <option value="core">⭐ 核心 (core) - 永不遗忘</option>
+                        <option value="preference">❤️ 偏好 (preference)</option>
+                        <option value="feeling">💭 感受 (feeling)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('addModal')">取消</button>
+                <button class="btn btn-primary" onclick="addMemory()">添加</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✏️ 编辑记忆</h3>
+                <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ID</label>
+                    <input type="text" id="editMemoryId" readonly style="background:var(--bg-primary);">
+                </div>
+                <div class="form-group">
+                    <label>内容</label>
+                    <textarea id="editMemoryText"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('editModal')">取消</button>
+                <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // ============================================================
+        // 配置说明（中英文对照）
+        // ============================================================
+        const CONFIG_DESCRIPTIONS = {
+            // LLM
+            LLM_API_BASE: "LLM API 地址",
+            LLM_API_KEY: "API 密钥",
+            LLM_MODEL: "使用的模型",
+            // Vision
+            VISION_ENABLED: "启用视觉功能",
+            VISION_MODEL: "视觉模型",
+            SCREENSHOT_MAX_SIZE: "截图最大尺寸 (像素)",
+            // Knowledge
+            ENABLE_KNOWLEDGE: "启用知识库",
+            KNOWLEDGE_SERVER_PORT: "知识库服务端口",
+            MEMORY_INJECTION_COUNT: "每轮注入记忆数",
+            MEMORY_DECAY_DAYS: "记忆衰减天数",
+            MEMORY_SIMILARITY_THRESHOLD: "相似度阈值 (去重)",
+            // Proactive
+            PROACTIVE_CHAT_ENABLED: "启用主动对话",
+            PROACTIVE_CHECK_INTERVAL_MIN: "检查间隔最小值 (秒)",
+            PROACTIVE_CHECK_INTERVAL_MAX: "检查间隔最大值 (秒)",
+            PROACTIVE_MIN_IDLE_TIME: "最小空闲时间 (秒)",
+            // TTS
+            VOXCPM_USE_DYNAMIC_CFG: "动态 CFG",
+            VOXCPM_CFG_SHORT: "短句 CFG (<20字)",
+            VOXCPM_CFG_MEDIUM: "中句 CFG (20-60字)",
+            VOXCPM_CFG_LONG: "长句 CFG (>60字)",
+            VOXCPM_INFERENCE_STEPS: "推理步数",
+            // Live2D
+            LIVE2D_FPS: "帧率",
+            LIVE2D_LIPSYNC_ENABLED: "口型同步",
+            LIVE2D_EXPRESSION_LERP_SPEED: "表情过渡速度",
+            LIVE2D_IDLE_BODY_BREATH_ENABLED: "身体呼吸动画",
+            LIVE2D_IDLE_TAIL_ENABLED: "尾巴摆动",
+            // STT
+            VOICE_TO_LLM_ENABLED: "语音直传 LLM",
+            STT_ENGINE: "STT 引擎",
+            VAD_THRESHOLD: "VAD 阈值",
+            VAD_MIN_SILENCE_MS: "静音检测 (毫秒)"
+        };
+        
+        // ============================================================
+        // API
+        // ============================================================
+        const API = {
+            async get(url) {
+                const res = await fetch(url);
+                return res.json();
+            },
+            async post(url, data) {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            },
+            async put(url, data) {
+                const res = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            },
+            async delete(url, data) {
+                const res = await fetch(url, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            }
+        };
+        
+        // ============================================================
+        // Navigation
+        // ============================================================
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                
+                item.classList.add('active');
+                const page = item.dataset.page;
+                document.getElementById(`page-${page}`).classList.add('active');
+                
+                if (page === 'config') loadConfig();
+                if (page === 'stats') loadStats();
+            });
+        });
+        
+        // ============================================================
+        // Memories
+        // ============================================================
+        const CATEGORY_ICONS = {
+            core: '⭐', fact: '📝', preference: '❤️', feeling: '💭',
+            episode: '📅', system: '⚙️', auto_learned: '🤖', unknown: '❓'
+        };
+        
+        let allMemories = [];
+        let filteredMemories = [];
+        let selectedIds = new Set();
+        
+        async function loadMemories() {
+            const grid = document.getElementById('memoryGrid');
+            grid.innerHTML = '<div class="loading"><div class="spinner"></div><div>加载中...</div></div>';
+            
+            try {
+                const res = await API.get('/api/memories');
+                if (res.success) {
+                    allMemories = res.data;
+                    applyFilters();
+                    document.getElementById('statusText').textContent = `已连接 · ${res.count} 条记忆`;
+                }
+            } catch (e) {
+                grid.innerHTML = `<div class="loading">❌ 连接失败，请确保知识库服务已启动</div>`;
+                document.getElementById('statusText').textContent = '连接失败';
+            }
+        }
+        
+        function applyFilters() {
+            const typeFilter = document.getElementById('filterType').value;
+            const sortBy = document.getElementById('sortBy').value;
+            const searchQuery = document.getElementById('searchInput').value.toLowerCase();
+            
+            // Filter
+            filteredMemories = allMemories.filter(m => {
+                const meta = m.metadata || {};
+                const cat = meta.category || 'unknown';
+                const text = (m.text || '').toLowerCase();
+                
+                if (typeFilter && cat !== typeFilter) return false;
+                if (searchQuery && !text.includes(searchQuery)) return false;
+                return true;
+            });
+            
+            // Sort
+            filteredMemories.sort((a, b) => {
+                const metaA = a.metadata || {};
+                const metaB = b.metadata || {};
+                
+                switch (sortBy) {
+                    case 'time_desc':
+                        return (metaB.timestamp || 0) - (metaA.timestamp || 0);
+                    case 'time_asc':
+                        return (metaA.timestamp || 0) - (metaB.timestamp || 0);
+                    case 'importance_desc':
+                        return (metaB.importance || 1) - (metaA.importance || 1);
+                    case 'importance_asc':
+                        return (metaA.importance || 1) - (metaB.importance || 1);
+                }
+                return 0;
+            });
+            
+            renderMemories(filteredMemories);
+        }
+        
+        function renderMemories(memories) {
+            const grid = document.getElementById('memoryGrid');
+            
+            if (memories.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state" style="grid-column:1/-1;">
+                        <div class="icon">📭</div>
+                        <div>没有找到匹配的记忆</div>
+                    </div>`;
+                return;
+            }
+            
+            grid.innerHTML = memories.map(m => {
+                const meta = m.metadata || {};
+                const cat = meta.category || 'unknown';
+                const importance = meta.importance || 1.0;
+                const importancePct = Math.min(100, Math.max(0, importance * 33));
+                const icon = CATEGORY_ICONS[cat] || '❓';
+                const text = m.text || '';
+                const displayText = text.length > 120 ? text.slice(0, 120) + '...' : text;
+                const isSelected = selectedIds.has(m.id);
+                const isCore = cat === 'core';
+                
+                return `
+                <div class="memory-card ${isSelected ? 'selected' : ''}" data-id="${m.id}">
+                    <div class="memory-header">
+                        <input type="checkbox" class="memory-checkbox" 
+                            ${isSelected ? 'checked' : ''} 
+                            onchange="toggleSelect('${m.id}', this.checked)">
+                        <span class="memory-type ${cat}">${icon} ${cat}</span>
+                        ${isCore ? '<span style="font-size:10px;color:#fbbf24;">🔒</span>' : ''}
+                        <span class="memory-id">${m.id.slice(0, 8)}</span>
+                    </div>
+                    <div class="memory-content">${escapeHtml(displayText)}</div>
+                    <div class="memory-footer">
+                        <div class="memory-importance">
+                            <span>重要性</span>
+                            <div class="importance-bar">
+                                <div class="importance-fill" style="width:${importancePct}%"></div>
+                            </div>
+                            <span>${importance.toFixed(1)}</span>
+                        </div>
+                        <div class="memory-actions">
+                            <button onclick="openEditModal('${m.id}', ${JSON.stringify(text).replace(/'/g, "\\'")})" title="编辑">✏️</button>
+                            <button onclick="copyId('${m.id}')" title="复制ID">📋</button>
+                            ${!isCore ? `<button onclick="deleteSingle('${m.id}')" title="删除">🗑️</button>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+            
+            updateSelectionInfo();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function toggleSelect(id, checked) {
+            if (checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+            document.querySelector(`[data-id="${id}"]`)?.classList.toggle('selected', checked);
+            updateSelectionInfo();
+        }
+        
+        function toggleSelectAll(checked) {
+            if (checked) {
+                filteredMemories.forEach(m => selectedIds.add(m.id));
+            } else {
+                selectedIds.clear();
+            }
+            renderMemories(filteredMemories);
+        }
+        
+        function updateSelectionInfo() {
+            document.getElementById('selectedCount').textContent = selectedIds.size;
+            document.getElementById('selectAll').checked = 
+                filteredMemories.length > 0 && selectedIds.size === filteredMemories.length;
+        }
+        
+        function copyId(id) {
+            navigator.clipboard.writeText(id);
+            showToast('ID 已复制', 'success');
+        }
+        
+        // Search with debounce
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(applyFilters, 200);
+        });
+        
+        // ============================================================
+        // CRUD Operations
+        // ============================================================
+        
+        function openAddModal() {
+            document.getElementById('addModal').classList.add('active');
+            document.getElementById('newMemoryText').focus();
+        }
+        
+        function openEditModal(id, text) {
+            document.getElementById('editMemoryId').value = id;
+            document.getElementById('editMemoryText').value = text;
+            document.getElementById('editModal').classList.add('active');
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+        
+        async function addMemory() {
+            const text = document.getElementById('newMemoryText').value.trim();
+            const category = document.getElementById('newMemoryType').value;
+            
+            if (!text) {
+                showToast('请输入内容', 'error');
+                return;
+            }
+            
+            try {
+                const res = await API.post('/api/memories', { text, category });
+                if (res.success) {
+                    showToast('✅ 添加成功', 'success');
+                    closeModal('addModal');
+                    document.getElementById('newMemoryText').value = '';
+                    loadMemories();
+                }
+            } catch (e) {
+                showToast('❌ 添加失败', 'error');
+            }
+        }
+        
+        async function saveEdit() {
+            const docId = document.getElementById('editMemoryId').value;
+            const newText = document.getElementById('editMemoryText').value.trim();
+            
+            if (!newText) {
+                showToast('内容不能为空', 'error');
+                return;
+            }
+            
+            try {
+                const res = await API.put('/api/memories', { doc_id: docId, new_text: newText });
+                if (res.success) {
+                    showToast('✅ 保存成功', 'success');
+                    closeModal('editModal');
+                    loadMemories();
+                }
+            } catch (e) {
+                showToast('❌ 保存失败', 'error');
+            }
+        }
+        
+        async function deleteSingle(id) {
+            if (!confirm('确定要删除这条记忆吗？')) return;
+            
+            try {
+                const res = await API.delete('/api/memories', { ids: [id] });
+                if (res.success) {
+                    showToast('✅ 已删除', 'success');
+                    selectedIds.delete(id);
+                    loadMemories();
+                }
+            } catch (e) {
+                showToast('❌ 删除失败', 'error');
+            }
+        }
+        
+        async function deleteSelected() {
+            if (selectedIds.size === 0) {
+                showToast('请先选择要删除的记忆', 'error');
+                return;
+            }
+            
+            if (!confirm(`确定要删除 ${selectedIds.size} 条记忆吗？\n（核心记忆会被自动跳过）`)) return;
+            
+            try {
+                const res = await API.delete('/api/memories', { ids: Array.from(selectedIds) });
+                if (res.success) {
+                    let msg = `✅ 删除 ${res.deleted} 条`;
+                    if (res.skipped) msg += `，跳过 ${res.skipped} 条核心记忆`;
+                    showToast(msg, 'success');
+                    selectedIds.clear();
+                    loadMemories();
+                }
+            } catch (e) {
+                showToast('❌ 删除失败', 'error');
+            }
+        }
+        
+        function exportSelected() {
+            if (selectedIds.size === 0) {
+                showToast('请先选择要导出的记忆', 'error');
+                return;
+            }
+            
+            const selected = allMemories.filter(m => selectedIds.has(m.id));
+            const text = selected.map(m => {
+                const meta = m.metadata || {};
+                return `[${meta.category || 'unknown'}] ${m.text}`;
+            }).join('\n\n');
+            
+            navigator.clipboard.writeText(text);
+            showToast(`✅ 已复制 ${selected.length} 条到剪贴板`, 'success');
+        }
+        
+        // ============================================================
+        // Config
+        // ============================================================
+        
+        async function loadConfig() {
+            const container = document.getElementById('configContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            try {
+                const res = await API.get('/api/config');
+                if (res.success) {
+                    renderConfig(res.data);
+                }
+            } catch (e) {
+                container.innerHTML = `<div class="loading">❌ 加载失败</div>`;
+            }
+        }
+        
+        function renderConfig(groups) {
+            const container = document.getElementById('configContainer');
+            
+            container.innerHTML = Object.entries(groups).map(([groupId, group]) => {
+                const items = Object.entries(group.items).map(([key, info]) => {
+                    const desc = CONFIG_DESCRIPTIONS[key] || '';
+                    let input;
+                    
+                    if (info.type === 'bool') {
+                        input = `
+                        <label class="toggle">
+                            <input type="checkbox" ${info.value ? 'checked' : ''} 
+                                onchange="updateConfig('${key}', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>`;
+                    } else if (info.type === 'int' || info.type === 'float') {
+                        input = `<input type="number" value="${info.value}" 
+                            step="${info.type === 'float' ? '0.1' : '1'}"
+                            onchange="updateConfig('${key}', this.value)">`;
+                    } else {
+                        input = `<input type="text" value="${info.value}" 
+                            onchange="updateConfig('${key}', this.value)">`;
+                    }
+                    
+                    return `
+                    <div class="config-item">
+                        <div class="config-info">
+                            <div class="config-key">${key}</div>
+                            <div class="config-desc">${desc}</div>
+                        </div>
+                        <div class="config-value">${input}</div>
+                    </div>`;
+                }).join('');
+                
+                return `
+                <div class="config-group">
+                    <div class="config-group-header">${group.title}</div>
+                    <div class="config-items">${items}</div>
+                </div>`;
+            }).join('');
+        }
+        
+        async function updateConfig(key, value) {
+            try {
+                const res = await API.put('/api/config', { key, value });
+                if (res.success) {
+                    showToast(`✅ ${key} 已更新`, 'success');
+                }
+            } catch (e) {
+                showToast('❌ 更新失败', 'error');
+            }
+        }
+        
+        // ============================================================
+        // Stats
+        // ============================================================
+        
+        async function loadStats() {
+            const grid = document.getElementById('statsGrid');
+            grid.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            try {
+                const res = await API.get('/api/memories/stats');
+                if (res.success) {
+                    const cats = res.categories || {};
+                    grid.innerHTML = `
+                        <div class="stat-card">
+                            <div class="stat-value">${res.total}</div>
+                            <div class="stat-label">📚 总计</div>
+                        </div>
+                        ${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([cat, count]) => `
+                        <div class="stat-card">
+                            <div class="stat-value">${count}</div>
+                            <div class="stat-label">${CATEGORY_ICONS[cat] || '❓'} ${cat}</div>
+                        </div>
+                        `).join('')}
+                    `;
+                }
+            } catch (e) {
+                grid.innerHTML = `<div class="loading">❌ 加载失败</div>`;
+            }
+        }
+        
+        // ============================================================
+        // Toast
+        // ============================================================
+        
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // ============================================================
+        // Init
+        // ============================================================
+        
+        loadMemories();
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+A: Select all (when not in input)
+            if (e.ctrlKey && e.key === 'a' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                document.getElementById('selectAll').checked = true;
+                toggleSelectAll(true);
+            }
+            // Escape: Close modals
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
+            }
+            // Delete: Delete selected
+            if (e.key === 'Delete' && selectedIds.size > 0 && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                deleteSelected();
+            }
+        });
+    </script>
+</body>
+</html>

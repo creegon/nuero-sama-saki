@@ -39,6 +39,14 @@ KNOWLEDGE_SOCKET_TIMEOUT = 10.0
 KNOWLEDGE_LANCEDB_PATH = os.path.join(BASE_DIR, "data", "knowledge_lance")
 KNOWLEDGE_COLLECTION_NAME = "sakiko_knowledge_v2"
 
+# 🔥 Triple Store (三元组知识图谱)
+TRIPLE_STORE_PATH = os.path.join(BASE_DIR, "data", "triples.jsonl")
+
+# 🔥 Hybrid 检索权重
+HYBRID_VECTOR_WEIGHT = 0.4    # Vector 语义检索权重
+HYBRID_GRAPH_WEIGHT = 0.6     # Graph 关系检索权重
+HYBRID_OVERLAP_BONUS = 0.3    # 同时命中加分
+
 # ====================
 # Proactive Chat Settings (LLM 主导模式)
 # ====================
@@ -52,11 +60,17 @@ PROACTIVE_CHECK_INTERVAL_MAX = 30    # 最长检查间隔（秒）
 PROACTIVE_MIN_IDLE_TIME = 10         # 用户至少空闲多久才会触发（秒）
 
 # 追问设置
-FOLLOW_UP_DELAY_MIN = 2              # 追问延迟最小值（秒）
-FOLLOW_UP_DELAY_MAX = 4              # 追问延迟最大值（秒）
+FOLLOW_UP_DELAY_MIN = 4              # 追问延迟最小值（秒）
+FOLLOW_UP_DELAY_MAX = 10              # 追问延迟最大值（秒）
 
 # 🔥 注意：已移除 PROACTIVE_CHAT_CHANCE 和 FOLLOW_UP_CHANCE
 # 现在完全由后台小祥（LLM）决定是否说话，不再有机械概率审核
+
+# ====================
+# 静默屏幕观察器 (Screen Observer)
+# ====================
+SCREEN_OBSERVER_ENABLED = True       # 是否启用静默观察
+SCREEN_OBSERVER_INTERVAL = 120       # 观察间隔（秒），默认 2 分钟
 
 # ====================
 # 记忆系统配置
@@ -75,8 +89,16 @@ MEMORY_IMPORTANT_THRESHOLD = 2.5     # 核心层记忆的重要性阈值
 # 注意: 优先使用 merged 模型 (checkpoints/sakiko_merged/tts_model_merged.pt)
 #       若 merged 不存在，则回退到 LoRA 模式
 VOXCPM_LORA_PATH = os.path.join(BASE_DIR, "checkpoints", "sakiko_lora", "step_0002000")  # LoRA 回退路径
-VOXCPM_CFG_VALUE = 2.2  # 降低到2.2以平衡稳定性以增加稳定性，降低音调失控概率)
-VOXCPM_INFERENCE_STEPS = 10  # 推理步数 (保持原值以维持RTF性能)
+
+# 🔥 动态 CFG 配置 (根据文本长度自动调整)
+# 基于 VoxCPM 社区经验值: CFG 2.0~5.0 是稳定区间，Steps 30~50 是性价比最高区间
+VOXCPM_USE_DYNAMIC_CFG = True  # 启用动态CFG
+VOXCPM_CFG_SHORT = 4.0   # 短句 (<20字): 清晰度优先
+VOXCPM_CFG_MEDIUM = 3.0  # 中句 (20-60字): 平衡 (甜点区间)
+VOXCPM_CFG_LONG = 2.5    # 长句 (>60字): 稳定性优先
+VOXCPM_CFG_VALUE = 3.0   # 默认值 (当动态CFG禁用时使用)
+
+VOXCPM_INFERENCE_STEPS = 12  # 推理步数 (15 平衡速度与质量)
 VOXCPM_USE_PROMPT = False  # 是否使用参考音频 (LoRA 效果好时通常不需要)
 VOXCPM_USE_EMOTION_REF = False  # 是否使用情感参考音频 (⚠️ 开启会增加 ~4s 延迟！)
 # ⚠️ FP16 在 VoxCPM 库中存在 audio_vae dtype 不匹配问题，暂时禁用
@@ -131,6 +153,15 @@ LIVE2D_IDLE_PHYSICS_ENABLED = True       # 启用头发物理 (UpdatePhysics)
 
 # 表情过渡
 LIVE2D_EXPRESSION_LERP_SPEED = 0.08      # 表情过渡速度 (0.05=慢~1s, 0.1=中~0.3s, 0.2=快~0.15s)
+
+# ====================
+# Live2D 交互配置
+# ====================
+LIVE2D_INTERACTION_ENABLED = True        # 启用交互功能
+LIVE2D_TOUCH_RESPONSE_ENABLED = True     # 启用触摸反应
+LIVE2D_TOUCH_COOLDOWN = 3.0              # 触摸反应冷却时间 (秒)
+LIVE2D_DRAG_RESPONSE_ENABLED = True      # 启用拖动反应
+
 
 # ====================
 # Service Ports

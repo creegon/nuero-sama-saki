@@ -79,13 +79,15 @@ def get_tool_registry() -> ToolRegistry:
 
 def _register_default_tools(registry: ToolRegistry) -> None:
     """注册默认工具"""
-    from .screenshot_tool import ScreenshotTool, ScreenshotDescribeTool
+    from .screenshot_tool import ScreenshotTool
     from .memory_tools import KnowledgeSearchTool, AddKnowledgeTool
     from .live2d_control_tool import Live2DControlTool
     from .web_search_tool import WebSearchTool
+    # from .window_tool import WindowTitleTool  # 功能已自动附加到 prompt
 
+    # 🔥 screenshot 仍然保留为工具，让小祥可以主动调用
+    # window_title 不再作为工具（自动附加到每次对话）
     registry.register(ScreenshotTool())
-    # registry.register(ScreenshotDescribeTool()) # 用户请求移除
     registry.register(KnowledgeSearchTool())
     registry.register(AddKnowledgeTool())
     # TimeAwareTool 已移除，时间信息直接注入 prompt
